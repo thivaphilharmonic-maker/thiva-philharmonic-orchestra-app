@@ -356,21 +356,21 @@
                     const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${ev.event_type}</span>` : '';
 
                     // Active state button styling
-                    let goingBtnClass = "px-2.5 py-1.5 rounded text-xs font-semibold transition ";
-                    let notGoingBtnClass = "px-2.5 py-1.5 rounded text-xs font-semibold transition ";
+                    let goingBtnClass = "px-3 py-1.5 rounded text-xs font-semibold transition ";
+                    let notGoingBtnClass = "px-3 py-1.5 rounded text-xs font-semibold transition ";
                     let statusLabel = '<span class="text-slate-400">Κατάσταση: <b class="text-slate-300">Χωρίς απάντηση</b></span>';
 
                     if (myStatus === 'Going') {
-                        goingBtnClass += "bg-emerald-600 text-white ring-2 ring-white shadow-md";
-                        notGoingBtnClass += "bg-slate-700 text-slate-400 hover:bg-slate-600 opacity-60";
+                        goingBtnClass += "bg-emerald-600 text-white ring-2 ring-white shadow-md font-bold";
+                        notGoingBtnClass += "bg-slate-800 text-slate-500 border border-slate-700 opacity-40 hover:opacity-100";
                         statusLabel = '<span class="text-slate-400">Κατάσταση: <b class="text-emerald-400">Θα είμαι εκεί ✅</b></span>';
                     } else if (myStatus === 'Not Going') {
-                        goingBtnClass += "bg-slate-700 text-slate-400 hover:bg-slate-600 opacity-60";
-                        notGoingBtnClass += "bg-red-600 text-white ring-2 ring-white shadow-md";
+                        goingBtnClass += "bg-slate-800 text-slate-500 border border-slate-700 opacity-40 hover:opacity-100";
+                        notGoingBtnClass += "bg-red-600 text-white ring-2 ring-white shadow-md font-bold";
                         statusLabel = `<span class="text-slate-400">Κατάσταση: <b class="text-red-400">Δεν μπορώ ❌</b> <span class="text-[10px] italic">(${myResp.excuse || 'Χωρίς αιτιολογία'})</span></span>`;
                     } else {
                         goingBtnClass += "bg-emerald-600 hover:bg-emerald-500 text-white";
-                        notGoingBtnClass += "bg-red-600/80 hover:bg-red-600 text-white";
+                        notGoingBtnClass += "bg-red-600 hover:bg-red-500 text-white";
                     }
 
                     html += `
@@ -385,7 +385,7 @@
                             
                             <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-t border-slate-700 pt-3 gap-2">
                                 <div class="text-xs">${statusLabel}</div>
-                                <div class="space-x-1 self-end sm:self-auto">
+                                <div class="space-x-1.5 self-end sm:self-auto">
                                     <button onclick="rsvp(${ev.id}, 'Going')" class="${goingBtnClass}">Θα είμαι εκεί</button>
                                     <button onclick="rsvp(${ev.id}, 'Not Going')" class="${notGoingBtnClass}">Δεν μπορώ</button>
                                 </div>
@@ -640,19 +640,42 @@
             }
 
             const userEmail = currentProfile?.email || currentUser?.email;
-            const { data: existing } = await supabaseClient
+            if (!userEmail) {
+                alert('Σφάλμα: Δεν βρέθηκε ενεργό email χρήστη.');
+                return;
+            }
+
+            // Check existing response using both event_id and user_email strictly
+            const { data: existing, error: fetchError } = await supabaseClient
                 .from('event_responses')
                 .select('*')
                 .eq('event_id', eventId)
                 .eq('user_email', userEmail)
-                .single();
+                .maybeSingle();
 
-            if (existing) {
-                await supabaseClient.from('event_responses').update({ status, excuse }).eq('id', existing.id);
-            } else {
-                await supabaseClient.from('event_responses').insert([{ event_id: eventId, user_email: userEmail, status, excuse }]);
+            if (fetchError) {
+                console.error(fetchError);
             }
-            renderEventsTab();
+
+            let error;
+            if (existing) {
+                const res = await supabaseClient
+                    .from('event_responses')
+                    .update({ status, excuse })
+                    .eq('id', existing.id);
+                error = res.error;
+            } else {
+                const res = await supabaseClient
+                    .from('event_responses')
+                    .insert([{ event_id: eventId, user_email: userEmail, status, excuse }]);
+                error = res.error;
+            }
+
+            if (error) {
+                alert('Σφάλμα αποθήκευσης: ' + error.message);
+            } else {
+                await renderEventsTab();
+            }
         }
 
         async function addEvent() {
