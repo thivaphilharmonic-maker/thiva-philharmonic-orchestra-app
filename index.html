@@ -74,11 +74,24 @@
 
         async function fetchProfile() {
             if (!currentUser) return;
-            const { data, error } = await supabaseClient
+            
+            // Try fetching by Supabase Auth user ID first
+            let { data, error } = await supabaseClient
                 .from('profiles')
                 .select('*')
                 .eq('id', currentUser.id)
                 .single();
+
+            // Fallback: If not found by ID, try matching by email address
+            if (!data && currentUser.email) {
+                const { data: dataByEmail } = await supabaseClient
+                    .from('profiles')
+                    .select('*')
+                    .eq('email', currentUser.email)
+                    .single();
+                if (dataByEmail) data = dataByEmail;
+            }
+
             if (data) currentProfile = data;
         }
 
@@ -331,14 +344,39 @@
             let roleDisplay = currentProfile?.role === 'admin' ? 'Διαχειριστής' : 'Μουσικός';
             content.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4">Το Προφίλ μου</h2>
-                <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3 mb-6">
-                    <p class="text-sm text-slate-300"><b>Ονοματεπώνυμο:</b> ${currentProfile?.name || 'Μη ορισμένο'}</p>
-                    <p class="text-sm text-slate-300"><b>Email:</b> ${currentProfile?.email}</p>
-                    <p class="text-sm text-slate-300"><b>Όργανο / Μέρος:</b> <span class="text-indigo-400 font-bold">${currentProfile?.instrument || 'Μη ανατεθειμένο'}</span></p>
-                    <p class="text-sm text-slate-300"><b>Ρόλος Συστήματος:</b> <span class="uppercase text-xs bg-slate-900 px-2 py-1 rounded text-emerald-400 font-medium">${roleDisplay}</span></p>
+                <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 mb-4">
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">Ονοματεπώνυμο</label>
+                        <input type="text" id="p-name" value="${currentProfile?.name || ''}" placeholder="Το ονοματεπώνυμό σας" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 block mb-1">Όργανο / Μέρος (π.χ., Κλαρινέτο 1)</label>
+                        <input type="text" id="p-instrument" value="${currentProfile?.instrument || ''}" placeholder="π.χ., Κλαρινέτο 1" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <p class="text-sm text-slate-300 pt-1"><b>Email:</b> ${currentProfile?.email || currentUser?.email}</p>
+                    <p class="text-sm text-slate-300"><b>Ρόλος Συστήματος:</b> <span class="uppercase text-xs bg-slate-900 px-2.5 py-1 rounded text-emerald-400 font-medium">${roleDisplay}</span></p>
                 </div>
+                <button onclick="updateProfile()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold p-3 rounded-lg transition text-sm mb-3">Αποθήκευση Αλλαγών</button>
                 <button onclick="handleLogout()" class="w-full bg-red-600/80 hover:bg-red-600 text-white font-semibold p-3 rounded-lg transition text-sm">Αποσύνδεση</button>
             `;
+        }
+
+        async function updateProfile() {
+            const name = document.getElementById('p-name').value;
+            const instrument = document.getElementById('p-instrument').value;
+
+            const { error } = await supabaseClient
+                .from('profiles')
+                .update({ name, instrument })
+                .eq('id', currentUser.id);
+
+            if (error) {
+                alert('Σφάλμα ενημέρωσης: ' + error.message);
+            } else {
+                alert('Το προφίλ σας ενημερώθηκε επιτυχώς!');
+                await fetchProfile();
+                renderProfileTab();
+            }
         }
 
         window.onload = init;
