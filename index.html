@@ -338,11 +338,7 @@
                 html += `<div class="space-y-4">`;
                 displayedEvents.forEach(ev => {
                     const myResp = responses?.find(r => r.event_id === ev.id);
-                    let displayResp = 'Χωρίς απάντηση';
-                    if (myResp?.status === 'Going') displayResp = 'Θα είμαι εκεί ✅';
-                    else if (myResp?.status === 'Not Going') {
-                        displayResp = `Δεν μπορώ ❌ ${myResp.excuse ? `(${myResp.excuse})` : ''}`;
-                    }
+                    const myStatus = myResp ? myResp.status : null; // 'Going' or 'Not Going' or null
 
                     const formattedDate = formatGreekDateOnly(ev.date);
                     const dateTimeDisplay = ev.time ? `${formattedDate}, ${ev.time}` : `${formattedDate} (Ώρα αναμένεται)`;
@@ -359,6 +355,24 @@
 
                     const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${ev.event_type}</span>` : '';
 
+                    // Active state button styling
+                    let goingBtnClass = "px-2.5 py-1.5 rounded text-xs font-semibold transition ";
+                    let notGoingBtnClass = "px-2.5 py-1.5 rounded text-xs font-semibold transition ";
+                    let statusLabel = '<span class="text-slate-400">Κατάσταση: <b class="text-slate-300">Χωρίς απάντηση</b></span>';
+
+                    if (myStatus === 'Going') {
+                        goingBtnClass += "bg-emerald-600 text-white ring-2 ring-white shadow-md";
+                        notGoingBtnClass += "bg-slate-700 text-slate-400 hover:bg-slate-600 opacity-60";
+                        statusLabel = '<span class="text-slate-400">Κατάσταση: <b class="text-emerald-400">Θα είμαι εκεί ✅</b></span>';
+                    } else if (myStatus === 'Not Going') {
+                        goingBtnClass += "bg-slate-700 text-slate-400 hover:bg-slate-600 opacity-60";
+                        notGoingBtnClass += "bg-red-600 text-white ring-2 ring-white shadow-md";
+                        statusLabel = `<span class="text-slate-400">Κατάσταση: <b class="text-red-400">Δεν μπορώ ❌</b> <span class="text-[10px] italic">(${myResp.excuse || 'Χωρίς αιτιολογία'})</span></span>`;
+                    } else {
+                        goingBtnClass += "bg-emerald-600 hover:bg-emerald-500 text-white";
+                        notGoingBtnClass += "bg-red-600/80 hover:bg-red-600 text-white";
+                    }
+
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
                             <div class="flex justify-between items-start mb-1">
@@ -369,11 +383,11 @@
                             <p class="text-xs text-slate-400 mb-2">📍 ${locationHtml} | 👔 Ενδυμασία: ${ev.dress_code || 'Καθημερινή'}</p>
                             ${ev.notes ? `<p class="text-xs bg-slate-900 p-2.5 rounded mb-3 text-slate-300">${ev.notes}</p>` : ''}
                             
-                            <div class="flex items-center justify-between border-t border-slate-700 pt-3">
-                                <span class="text-xs text-slate-400">Κατάσταση: <b class="text-white">${displayResp}</b></span>
-                                <div class="space-x-1">
-                                    <button onclick="rsvp(${ev.id}, 'Going')" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-semibold transition">Θα είμαι εκεί</button>
-                                    <button onclick="rsvp(${ev.id}, 'Not Going')" class="px-2.5 py-1.5 bg-red-600/80 hover:bg-red-600 rounded text-xs font-semibold transition">Δεν μπορώ</button>
+                            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-t border-slate-700 pt-3 gap-2">
+                                <div class="text-xs">${statusLabel}</div>
+                                <div class="space-x-1 self-end sm:self-auto">
+                                    <button onclick="rsvp(${ev.id}, 'Going')" class="${goingBtnClass}">Θα είμαι εκεί</button>
+                                    <button onclick="rsvp(${ev.id}, 'Not Going')" class="${notGoingBtnClass}">Δεν μπορώ</button>
                                 </div>
                             </div>
                         </div>
