@@ -30,7 +30,6 @@
 
     <!-- JAVASCRIPT APP LOGIC -->
     <script>
-        // Correct base Supabase URL (without /rest/v1/)
         const SUPABASE_URL = 'https://jigwfebaxiqumrltkgli.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_ORpUPeW5OSBOwTCTIKhPUw_SX8DtV9Z';
 
@@ -40,6 +39,12 @@
         let currentProfile = null;
 
         async function init() {
+            // Check if user is arriving via an invite or recovery link hash
+            if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
+                renderSetPasswordScreen();
+                return;
+            }
+
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (session) {
                 currentUser = session.user;
@@ -50,6 +55,11 @@
             }
 
             supabaseClient.auth.onAuthStateChange(async (event, session) => {
+                if (event === 'PASSWORD_RECOVERY' || window.location.hash.includes('type=invite')) {
+                    renderSetPasswordScreen();
+                    return;
+                }
+
                 if (session) {
                     currentUser = session.user;
                     await fetchProfile();
@@ -63,6 +73,7 @@
         }
 
         async function fetchProfile() {
+            if (!currentUser) return;
             const { data, error } = await supabaseClient
                 .from('profiles')
                 .select('*')
@@ -87,6 +98,44 @@
             `;
         }
 
+        function renderSetPasswordScreen() {
+            document.getElementById('navbar').classList.add('hidden');
+            document.getElementById('content').innerHTML = `
+                <div class="flex flex-col items-center justify-center min-h-[80vh] text-center">
+                    <h1 class="text-2xl font-bold text-indigo-400 mb-2">Δημιουργία Κωδικού Πρόσβασης</h1>
+                    <p class="text-slate-400 mb-6 text-sm">Καλώς ήρθατε! Ορίστε τον κωδικό πρόσβασής σας για να ολοκληρώσετε την εγγραφή σας στην εφαρμογή.</p>
+                    <div class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                        <input type="password" id="new-password" placeholder="Νέος Κωδικός (τουλάχιστον 6 χαρακτήρες)" class="w-full mb-4 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500 text-sm">
+                        <button onclick="handleSetPassword()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-lg transition text-sm">Αποθήκευση Κωδικού & Είσοδος</button>
+                    </div>
+                    <p id="password-error-msg" class="text-red-400 mt-4 text-sm"></p>
+                </div>
+            `;
+        }
+
+        async function handleSetPassword() {
+            const password = document.getElementById('new-password').value;
+            if (!password || password.length < 6) {
+                document.getElementById('password-error-msg').innerText = 'Ο κωδικός πρέπει να έχει τουλάχιστον 6 χαρακτήρες.';
+                return;
+            }
+
+            const { error } = await supabaseClient.auth.updateUser({ password });
+            if (error) {
+                document.getElementById('password-error-msg').innerText = error.message;
+            } else {
+                alert('Ο κωδικός αποθηκεύτηκε επιτυχώς!');
+                // Clear the invite hash from URL and load main app
+                window.location.hash = '';
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                if (session) {
+                    currentUser = session.user;
+                    await fetchProfile();
+                    renderApp();
+                }
+            }
+        }
+
         async function handleLogin() {
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
@@ -108,7 +157,6 @@
 
         async function renderApp() {
             document.getElementById('navbar').classList.remove('hidden');
-            // Highlight active nav button
             ['music', 'events', 'profile'].forEach(t => {
                 const btn = document.getElementById(`nav-${t}`);
                 if (t === activeTab) {
@@ -156,7 +204,6 @@
                 html += `</div>`;
             }
 
-            // If Admin, show quick add form
             if (currentProfile?.role === 'admin') {
                 html += `
                     <div class="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
@@ -227,7 +274,6 @@
                 html += `</div>`;
             }
 
-            // If Admin, show quick add event form
             if (currentProfile?.role === 'admin') {
                 html += `
                     <div class="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
@@ -291,7 +337,6 @@
             `;
         }
 
-        // Run app initialization on load
         window.onload = init;
     </script>
 </body>
