@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Φιλαρμονική Ορχήστρα Θήβας</title>
     
-    <!-- PWA / Native App Meta Tags to lock full-screen mode -->
+    <!-- PWA / Native App Meta Tags & Dynamic Icon Manifest -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Φιλαρμονική Θήβας">
-    <link rel="manifest" href='data:application/manifest+json;charset=utf-8,{"name":"Φιλαρμονική Ορχήστρα Θήβας","short_name":"Φιλαρμονική","start_url":".","display":"standalone","background_color":"%230f172a","theme_color":"%231e293b"}'>
+    <link rel="apple-touch-icon" id="apple-touch-icon">
+    <link rel="manifest" id="pwa-manifest">
 
     <!-- Tailwind CSS for modern mobile-first styling -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -42,6 +43,32 @@
         const SUPABASE_ANON_KEY = 'sb_publishable_ORpUPeW5OSBOwTCTIKhPUw_SX8DtV9Z';
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // --- ICON GENERATOR ---
+        // Generates a clean, high-contrast SVG band logo emblem and injects it as data-URLs 
+        // for the app icon, web manifest, and UI header instantly without external image links.
+        const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+            <rect width="512" height="512" rx="110" fill="#0f172a"/>
+            <circle cx="256" cy="256" r="185" fill="none" stroke="#6366f1" stroke-width="14"/>
+            <path d="M220 130 C300 130 330 200 300 250 C270 300 210 320 210 370 L300 370" fill="none" stroke="#cbd5e1" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="210" cy="370" r="22" fill="#6366f1"/>
+            <circle cx="256" cy="115" r="14" fill="#818cf8"/>
+            <path d="M170 230 L230 230 M200 200 L200 260" stroke="#818cf8" stroke-width="8" stroke-linecap="round"/>
+        `;
+        const LOGO_DATA_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(LOGO_SVG);
+
+        // Dynamically inject icon data into headers
+        document.getElementById('apple-touch-icon').href = LOGO_DATA_URL;
+        const manifestData = {
+            "name": "Φιλαρμονική Ορχήστρα Θήβας",
+            "short_name": "Φιλαρμονική",
+            "start_url": ".",
+            "display": "standalone",
+            "background_color": "#0f172a",
+            "theme_color": "#1e293b",
+            "icons": [{ "src": LOGO_DATA_URL, "sizes": "512x512", "type": "image/svg+xml" }]
+        };
+        document.getElementById('pwa-manifest').href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifestData));
 
         let currentUser = null;
         let currentProfile = null;
@@ -105,8 +132,11 @@
         function renderLogin() {
             document.getElementById('navbar').classList.add('hidden');
             document.getElementById('content').innerHTML = `
-                <div class="flex flex-col items-center justify-center min-h-[80vh] text-center">
-                    <h1 class="text-2xl font-bold text-indigo-400 mb-2">Φιλαρμονική Ορχήστρα Θήβας</h1>
+                <div class="flex flex-col items-center justify-center min-h-[85vh] text-center">
+                    <div class="w-24 h-24 mb-4 drop-shadow-md">
+                        ${LOGO_SVG}
+                    </div>
+                    <h1 class="text-2xl font-bold text-indigo-400 mb-1">Φιλαρμονική Ορχήστρα Θήβας</h1>
                     <p class="text-slate-400 mb-6 text-sm">Συνδεθείτε για να δείτε τις παρτιτούρες σας και το πρόγραμμα.</p>
                     <div class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                         <input type="email" id="email" placeholder="Διεύθυνση Email" class="w-full mb-3 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500">
@@ -121,7 +151,10 @@
         function renderSetPasswordScreen() {
             document.getElementById('navbar').classList.add('hidden');
             document.getElementById('content').innerHTML = `
-                <div class="flex flex-col items-center justify-center min-h-[80vh] text-center">
+                <div class="flex flex-col items-center justify-center min-h-[85vh] text-center">
+                    <div class="w-20 h-20 mb-3 drop-shadow-md">
+                        ${LOGO_SVG}
+                    </div>
                     <h1 class="text-2xl font-bold text-indigo-400 mb-2">Δημιουργία Κωδικού Πρόσβασης</h1>
                     <p class="text-slate-400 mb-6 text-sm">Καλώς ήρθατε! Ορίστε τον κωδικό πρόσβασής σας για να ολοκληρώσετε την εγγραφή σας στην εφαρμογή.</p>
                     <div class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
@@ -203,8 +236,15 @@
                 return;
             }
 
-            let html = `<h2 class="text-2xl font-bold mb-1">Παρτιτούρες</h2>`;
-            html += `<p class="text-xs text-indigo-300 mb-4">Φιλτραρισμένο για το όργανό σας: <b>${currentProfile?.instrument || 'Μη ορισμένο'}</b></p>`;
+            let html = `
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-2xl font-bold">Παρτιτούρες</h2>
+                        <p class="text-xs text-indigo-300">Όργανο: <b>${currentProfile?.instrument || 'Μη ορισμένο'}</b></p>
+                    </div>
+                    <div class="w-10 h-10">${LOGO_SVG}</div>
+                </div>
+            `;
 
             if (!music || music.length === 0) {
                 html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν διαθέσιμες παρτιτούρες ακόμα.</div>`;
@@ -272,7 +312,10 @@
 
             let html = `
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-bold">Πρόγραμμα</h2>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-8 h-8">${LOGO_SVG}</div>
+                        <h2 class="text-2xl font-bold">Πρόγραμμα</h2>
+                    </div>
                     <div class="bg-slate-800 p-1 rounded-lg border border-slate-700 flex space-x-1">
                         <button onclick="setEventsView('list')" class="px-3 py-1 rounded text-xs font-medium transition ${eventsViewMode === 'list' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}">Λίστα</button>
                         <button onclick="setEventsView('calendar')" class="px-3 py-1 rounded text-xs font-medium transition ${eventsViewMode === 'calendar' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}">Ημερολόγιο</button>
@@ -387,7 +430,12 @@
 
             const isAdmin = currentProfile?.role === 'admin';
 
-            let html = `<h2 class="text-2xl font-bold mb-1">Παρουσίες & Συμμετοχές</h2>`;
+            let html = `
+                <div class="flex items-center justify-between mb-1">
+                    <h2 class="text-2xl font-bold">Παρουσίες</h2>
+                    <div class="w-8 h-8">${LOGO_SVG}</div>
+                </div>
+            `;
             
             if (isAdmin) {
                 // --- ADMIN VIEW: FULL BAND REPORT ---
@@ -624,7 +672,10 @@
             const instrument = currentProfile?.instrument || 'Μη ορισμένο';
 
             content.innerHTML = `
-                <h2 class="text-2xl font-bold mb-4">Το Προφίλ μου</h2>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-2xl font-bold">Το Προφίλ μου</h2>
+                    <div class="w-10 h-10">${LOGO_SVG}</div>
+                </div>
                 <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3 mb-4">
                     <div>
                         <span class="text-xs text-slate-400 block">Όνομα</span>
