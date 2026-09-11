@@ -348,9 +348,10 @@
                         const parts = ev.location.split('|');
                         const locName = parts[0].trim();
                         const locUrl = parts[1].trim();
-                        locationHtml = `<a href="${locUrl}" target="_blank" class="text-indigo-400 hover:underline font-medium inline-flex items-center">${locName} 📍</a>`;
+                        // Fixed: removed the second 📍 here so only the leading pin renders
+                        locationHtml = `<a href="${locUrl}" target="_blank" class="text-indigo-400 hover:underline font-medium inline-flex items-center">${locName}</a>`;
                     } else if (ev.location && (ev.location.startsWith('http://') || ev.location.startsWith('https://'))) {
-                        locationHtml = `<a href="${ev.location}" target="_blank" class="text-indigo-400 hover:underline">Χάρτης 📍</a>`;
+                        locationHtml = `<a href="${ev.location}" target="_blank" class="text-indigo-400 hover:underline">Χάρτης</a>`;
                     }
 
                     const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${ev.event_type}</span>` : '';
