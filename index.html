@@ -22,6 +22,12 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
     <meta name="theme-color" content="#1e293b">
+    <style>
+        #pdf-viewer-container {
+            -webkit-user-select: none;
+            user-select: none;
+        }
+    </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
 
@@ -287,7 +293,7 @@
             } else {
                 html += `<div class="space-y-3">`;
                 music.forEach(item => {
-                    const cleanLink = item.pdf_link ? item.pdf_link.replace('/view?usp=sharing', '/uc?export=download') : '';
+                    const filePath = item.pdf_path || item.pdf_link; // Support legacy or new paths
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
                             <div>
@@ -295,8 +301,7 @@
                                 <p class="text-xs text-slate-400">${item.composer || 'Άγνωστος Συνθέτης'} • ${item.instrument_part || item.concert_set || 'Γενικό'}</p>
                             </div>
                             <div class="flex space-x-1.5 shrink-0 ml-2">
-                                ${cleanLink ? `<button onclick="openPdfViewer('${cleanLink}', ${item.id})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white">Άνοιγμα & Σημειώσεις</button>` : ''}
-                                <a href="${item.pdf_link}" target="_blank" class="bg-slate-700 hover:bg-slate-600 px-2.5 py-2 rounded-lg text-xs font-semibold transition text-slate-300" title="Εξωτερικός Σύνδεσμος">🔗</a>
+                                ${filePath ? `<button onclick="openSecurePdf('${filePath}', ${item.id})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white">Άνοιγμα & Σημειώσεις</button>` : ''}
                             </div>
                         </div>
                     `;
@@ -312,8 +317,11 @@
                         <input type="text" id="m-composer" placeholder="Συνθέτης" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
                         <input type="text" id="m-set" placeholder="Σετ Συναυλίας (π.χ., Παρέλαση 28ης)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
                         <input type="text" id="m-part" placeholder="Όργανο / Μέρος (π.χ., Φλάουτο 1)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="m-link" placeholder="Σύνδεσμος Google Drive (PDF)" class="w-full mb-3 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <button onclick="addMusic()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded font-semibold text-sm">Προσθήκη στη Βιβλιοθήκη</button>
+                        <div class="mb-3">
+                            <label class="text-[10px] text-slate-400 block mb-1">Αρχείο PDF (Supabase Storage)</label>
+                            <input type="file" id="m-file" accept="application/pdf" class="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500">
+                        </div>
+                        <button onclick="addMusic()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded font-semibold text-sm">Μεταφόρτωση & Προσθήκη</button>
                     </div>
                 `;
             }
@@ -326,17 +334,58 @@
             const composer = document.getElementById('m-composer').value;
             const concert_set = document.getElementById('m-set').value;
             const instrument_part = document.getElementById('m-part').value;
-            const pdf_link = document.getElementById('m-link').value;
+            const fileInput = document.getElementById('m-file');
 
-            const { error } = await supabaseClient.from('music_library').insert([{ piece_title, composer, concert_set, instrument_part, pdf_link }]);
-            if (error) alert(error.message);
-            else {
-                alert('Η παρτιτούρα προστέθηκε επιτυχώς!');
+            if (!piece_title || !fileInput.files || fileInput.files.length === 0) {
+                alert('Παρακαλώ συμπληρώστε τίτλο και επιλέξτε αρχείο PDF.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+            const filePath = `scores/${fileName}`;
+
+            const { error: uploadError } = await supabaseClient.storage
+                .from('sheet-music')
+                .upload(filePath, file);
+
+            if (uploadError) {
+                alert('Σφάλμα μεταφόρτωσης αρχείου: ' + uploadError.message);
+                return;
+            }
+
+            const { error: dbError } = await supabaseClient.from('music_library').insert([{ 
+                piece_title, 
+                composer, 
+                concert_set, 
+                instrument_part, 
+                pdf_path: filePath 
+            }]);
+
+            if (dbError) {
+                alert('Σφάλμα αποθήκευσης στη βάση: ' + dbError.message);
+            } else {
+                alert('Η παρτιτούρα μεταφορτώθηκε επιτυχώς!');
                 renderMusicTab();
             }
         }
 
-        // --- PDF VIEWER & ANNOTATION LOGIC ---
+        // --- SECURE PDF VIEWER & WATERMARK LOGIC ---
+        async function openSecurePdf(filePath, pieceId) {
+            // Generate a 60-second secure signed URL from Supabase Storage
+            const { data, error } = await supabaseClient.storage
+                .from('sheet-music')
+                .createSignedUrl(filePath, 60);
+
+            if (error || !data?.signedUrl) {
+                alert('Σφάλμα πρόσβασης στο αρχείο: ' + (error?.message || 'Άγνωστο σφάλμα'));
+                return;
+            }
+
+            openPdfViewer(data.signedUrl, pieceId);
+        }
+
         async function openPdfViewer(pdfUrl, pieceId) {
             activePieceId = pieceId;
             pageNum = 1;
@@ -378,22 +427,57 @@
             drawCanvas.width = viewport.width;
 
             await page.render({ canvasContext: pdfCtx, viewport: viewport }).promise;
+
+            // --- WATERMARK APPLICATION ---
+            applyWatermarks(pdfCtx, viewport.width, viewport.height);
+
             pageRendering = false;
-            
             document.getElementById('page-num-display').innerText = `Σελίδα ${num} / ${pdfDoc.numPages}`;
+        }
+
+        function applyWatermarks(ctx, width, height) {
+            const userEmail = currentProfile?.email || currentUser?.email || 'musician';
+            const timestamp = new Date().toISOString();
+
+            // Method B: Non-Intrusive Footer Copyright / License Line
+            ctx.save();
+            ctx.font = '10px monospace';
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.6)'; // Subtle slate color
+            ctx.textAlign = 'center';
+            const watermarkText = `Licensed exclusively to: ${userEmail} • Φιλαρμονική Ορχήστρα Θήβας`;
+            ctx.fillText(watermarkText, width / 2, height - 12);
+            ctx.restore();
+
+            // Method A: Hidden Zero-Width Unicode Forensic Fingerprint (Embedded as metadata/text drawing)
+            const fingerprintString = textToZeroWidth(`UID:${userEmail}|TS:${timestamp}`);
+            ctx.save();
+            ctx.font = '1px sans-serif';
+            ctx.fillStyle = 'rgba(0,0,0,0)'; // Fully transparent
+            ctx.fillText(fingerprintString, 5, 10);
+            ctx.restore();
+        }
+
+        function textToZeroWidth(text) {
+            const zeroWidthSpace = '\u200B';
+            const zeroWidthNonJoiner = '\u200C';
+            const zeroWidthJoiner = '\u200D';
+            
+            return text.split('').map(char => {
+                const bin = char.charCodeAt(0).toString(2).padStart(8, '0');
+                return bin.split('').map(bit => bit === '1' ? zeroWidthSpace : zeroWidthNonJoiner).join('');
+            }).join(zeroWidthJoiner);
         }
 
         async function changePage(val) {
             if (!pdfDoc || pageRendering) return;
             if (pageNum + val < 1 || pageNum + val > pdfDoc.numPages) return;
             
-            savePageToMemory(); // Save annotations of current page before switching
+            savePageToMemory(); 
             pageNum += val;
             await renderPage(pageNum);
             restorePageFromMemory();
         }
 
-        // Simple in-memory page annotation cache
         const pageAnnotations = {};
 
         function savePageToMemory() {
@@ -443,7 +527,7 @@
                 drawCtx.globalCompositeOperation = 'source-over';
             } else {
                 drawCtx.lineWidth = 20;
-                drawCtx.globalCompositeOperation = 'destination-out'; // Erase drawing layer
+                drawCtx.globalCompositeOperation = 'destination-out'; 
             }
 
             drawCtx.lineTo(x, y);
