@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="el">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Thiva Philharmonic Orchestra App</title>
+    <title>Φιλαρμονική Ορχήστρα Θήβας</title>
     <!-- Tailwind CSS for modern mobile-first styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Supabase JavaScript Client -->
@@ -22,9 +22,9 @@
 
         <!-- NAVIGATION BAR (Visible when logged in) -->
         <nav id="navbar" class="hidden fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 flex justify-around p-3 max-w-md mx-auto z-50">
-            <button onclick="switchTab('music')" id="nav-music" class="text-indigo-400 font-medium text-sm">Sheet Music</button>
-            <button onclick="switchTab('events')" id="nav-events" class="text-slate-400 font-medium text-sm">Events & RSVPs</button>
-            <button onclick="switchTab('profile')" id="nav-profile" class="text-slate-400 font-medium text-sm">Profile</button>
+            <button onclick="switchTab('music')" id="nav-music" class="text-indigo-400 font-medium text-sm">Παρτιτούρες</button>
+            <button onclick="switchTab('events')" id="nav-events" class="text-slate-400 font-medium text-sm">Εκδηλώσεις</button>
+            <button onclick="switchTab('profile')" id="nav-profile" class="text-slate-400 font-medium text-sm">Προφίλ</button>
         </nav>
     </div>
 
@@ -86,12 +86,12 @@
             document.getElementById('navbar').classList.add('hidden');
             document.getElementById('content').innerHTML = `
                 <div class="flex flex-col items-center justify-center min-h-[80vh] text-center">
-                    <h1 class="text-3xl font-bold text-indigo-400 mb-2">Φιλαρμονική Ορχήστρα Θήβας</h1>
-                    <p class="text-slate-400 mb-6">Συνδεθείτε για να δείτε τις παρτιτούρες σας και το πρόγραμμα.</p>
+                    <h1 class="text-2xl font-bold text-indigo-400 mb-2">Φιλαρμονική Ορχήστρα Θήβας</h1>
+                    <p class="text-slate-400 mb-6 text-sm">Συνδεθείτε για να δείτε τις παρτιτούρες σας και το πρόγραμμα.</p>
                     <div class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                        <input type="email" id="email" placeholder="Email address" class="w-full mb-3 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
-                        <input type="password" id="password" placeholder="Password" class="w-full mb-4 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
-                        <button onclick="handleLogin()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold p-3 rounded-lg transition">Sign In</button>
+                        <input type="email" id="email" placeholder="Διεύθυνση Email" class="w-full mb-3 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500">
+                        <input type="password" id="password" placeholder="Κωδικός πρόσβασης" class="w-full mb-4 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500">
+                        <button onclick="handleLogin()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold p-3 rounded-lg transition text-sm">Σύνδεση</button>
                     </div>
                     <p id="error-msg" class="text-red-400 mt-4 text-sm"></p>
                 </div>
@@ -106,7 +106,7 @@
                     <p class="text-slate-400 mb-6 text-sm">Καλώς ήρθατε! Ορίστε τον κωδικό πρόσβασής σας για να ολοκληρώσετε την εγγραφή σας στην εφαρμογή.</p>
                     <div class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                         <input type="password" id="new-password" placeholder="Νέος Κωδικός (τουλάχιστον 6 χαρακτήρες)" class="w-full mb-4 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500 text-sm">
-                        <button onclick="handleSetPassword()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-lg transition text-sm">Αποθήκευση Κωδικού & Είσοδος</button>
+                        <button onclick="handleSetPassword()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold p-3 rounded-lg transition text-sm">Αποθήκευση & Είσοδος</button>
                     </div>
                     <p id="password-error-msg" class="text-red-400 mt-4 text-sm"></p>
                 </div>
@@ -125,7 +125,6 @@
                 document.getElementById('password-error-msg').innerText = error.message;
             } else {
                 alert('Ο κωδικός αποθηκεύτηκε επιτυχώς!');
-                // Clear the invite hash from URL and load main app
                 window.location.hash = '';
                 const { data: { session } } = await supabaseClient.auth.getSession();
                 if (session) {
@@ -141,7 +140,7 @@
             const password = document.getElementById('password').value;
             const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
             if (error) {
-                document.getElementById('error-msg').innerText = error.message;
+                document.getElementById('error-msg').innerText = 'Λανθασμένο email ή κωδικός πρόσβασης.';
             }
         }
 
@@ -174,30 +173,30 @@
         // --- MUSIC TAB ---
         async function renderMusicTab() {
             const content = document.getElementById('content');
-            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Sheet Music (${currentProfile?.instrument || 'Loading...'})</h2><p class="text-slate-400">Loading library...</p>`;
+            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρτιτούρες</h2><p class="text-slate-400 text-sm">Φόρτωση βιβλιοθήκης...</p>`;
 
             const { data: music, error } = await supabaseClient.from('music_library').select('*');
 
             if (error) {
-                content.innerHTML = `<p class="text-red-400">Error loading music: ${error.message}</p>`;
+                content.innerHTML = `<p class="text-red-400 text-sm">Σφάλμα φόρτωσης: ${error.message}</p>`;
                 return;
             }
 
-            let html = `<h2 class="text-2xl font-bold mb-1">Sheet Music</h2>`;
-            html += `<p class="text-xs text-indigo-300 mb-4">Filtered for your part: <b>${currentProfile?.instrument}</b></p>`;
+            let html = `<h2 class="text-2xl font-bold mb-1">Παρτιτούρες</h2>`;
+            html += `<p class="text-xs text-indigo-300 mb-4">Φιλτραρισμένο για το όργανό σας: <b>${currentProfile?.instrument || 'Μη ορισμένο'}</b></p>`;
 
             if (!music || music.length === 0) {
-                html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400">No sheet music assigned to your part yet.</div>`;
+                html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν διαθέσιμες παρτιτούρες ακόμα.</div>`;
             } else {
                 html += `<div class="space-y-3">`;
                 music.forEach(item => {
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
                             <div>
-                                <h3 class="font-bold text-lg text-white">${item.piece_title}</h3>
-                                <p class="text-xs text-slate-400">${item.composer || 'Unknown Composer'} • Set: ${item.concert_set || 'General'}</p>
+                                <h3 class="font-bold text-base text-white">${item.piece_title}</h3>
+                                <p class="text-xs text-slate-400">${item.composer || 'Άγνωστος Συνθέτης'} • Σετ: ${item.concert_set || 'Γενικό'}</p>
                             </div>
-                            <a href="${item.pdf_link}" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-semibold transition">Open PDF</a>
+                            <a href="${item.pdf_link}" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition shrink-0 ml-2">PDF</a>
                         </div>
                     `;
                 });
@@ -207,13 +206,13 @@
             if (currentProfile?.role === 'admin') {
                 html += `
                     <div class="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
-                        <h3 class="font-bold text-md text-indigo-400 mb-2">Admin: Add Sheet Music</h3>
-                        <input type="text" id="m-title" placeholder="Piece Title" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="m-composer" placeholder="Composer" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="m-set" placeholder="Concert Set" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="m-part" placeholder="Instrument Part (e.g., Flute 1)" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="m-link" placeholder="Google Drive Share Link" class="w-full mb-3 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <button onclick="addMusic()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded font-semibold text-sm">Upload to Library</button>
+                        <h3 class="font-bold text-sm text-indigo-400 mb-3">Διαχειριστής: Προσθήκη Παρτιτούρας</h3>
+                        <input type="text" id="m-title" placeholder="Τίτλος Κομματιού" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="m-composer" placeholder="Συνθέτης" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="m-set" placeholder="Σετ Συναυλίας (π.χ., Παρέλαση 28ης)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="m-part" placeholder="Όργανο / Μέρος (π.χ., Φλάουτο 1)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="m-link" placeholder="Σύνδεσμος Google Drive (PDF)" class="w-full mb-3 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <button onclick="addMusic()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded font-semibold text-sm">Προσθήκη στη Βιβλιοθήκη</button>
                     </div>
                 `;
             }
@@ -231,7 +230,7 @@
             const { error } = await supabaseClient.from('music_library').insert([{ piece_title, composer, concert_set, instrument_part, pdf_link }]);
             if (error) alert(error.message);
             else {
-                alert('Added successfully!');
+                alert('Η παρτιτούρα προστέθηκε επιτυχώς!');
                 renderMusicTab();
             }
         }
@@ -239,33 +238,37 @@
         // --- EVENTS TAB ---
         async function renderEventsTab() {
             const content = document.getElementById('content');
-            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Events & RSVPs</h2><p class="text-slate-400">Loading events...</p>`;
+            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
 
             const { data: events } = await supabaseClient.from('band_events').select('*').order('date_time', { ascending: true });
             const { data: responses } = await supabaseClient.from('event_responses').select('*').eq('user_email', currentProfile.email);
 
-            let html = `<h2 class="text-2xl font-bold mb-4">Upcoming Schedule</h2>`;
+            let html = `<h2 class="text-2xl font-bold mb-4">Επερχόμενο Πρόγραμμα</h2>`;
 
             if (!events || events.length === 0) {
-                html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400">No upcoming events scheduled.</div>`;
+                html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν προγραμματισμένες εκδηλώσεις.</div>`;
             } else {
                 html += `<div class="space-y-4">`;
                 events.forEach(ev => {
-                    const myResp = responses?.find(r => r.event_id === ev.id)?.status || 'Not Answered';
-                    const formattedDate = new Date(ev.date_time).toLocaleString();
+                    const rawResp = responses?.find(r => r.event_id === ev.id)?.status;
+                    let displayResp = 'Χωρίς απάντηση';
+                    if (rawResp === 'Going') displayResp = 'Θα παρευρεθώ ✅';
+                    else if (rawResp === 'Not Going') displayResp = 'Δεν θα μπορέσω ❌';
+
+                    const formattedDate = new Date(ev.date_time).toLocaleString('el-GR', { dateStyle: 'medium', timeStyle: 'short' });
 
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                            <h3 class="font-bold text-lg text-white">${ev.event_name}</h3>
+                            <h3 class="font-bold text-base text-white mb-1">${ev.event_name}</h3>
                             <p class="text-xs text-indigo-300 mb-1">📅 ${formattedDate}</p>
-                            <p class="text-xs text-slate-400 mb-2">📍 ${ev.location || 'TBD'} | 👔 Dress: ${ev.dress_code || 'Casual'}</p>
-                            ${ev.notes ? `<p class="text-xs bg-slate-900 p-2 rounded mb-3 text-slate-300">${ev.notes}</p>` : ''}
+                            <p class="text-xs text-slate-400 mb-2">📍 ${ev.location || 'Θα ανακοινωθεί'} | 👔 Ενδυμασία: ${ev.dress_code || 'Καθημερινή'}</p>
+                            ${ev.notes ? `<p class="text-xs bg-slate-900 p-2.5 rounded mb-3 text-slate-300">${ev.notes}</p>` : ''}
                             
                             <div class="flex items-center justify-between border-t border-slate-700 pt-3">
-                                <span class="text-xs text-slate-400">Your RSVP: <b class="text-white">${myResp}</b></span>
+                                <span class="text-xs text-slate-400">Κατάσταση: <b class="text-white">${displayResp}</b></span>
                                 <div class="space-x-1">
-                                    <button onclick="rsvp(${ev.id}, 'Going')" class="px-3 py-1 bg-emerald-600/80 hover:bg-emerald-600 rounded text-xs font-semibold">Going</button>
-                                    <button onclick="rsvp(${ev.id}, 'Not Going')" class="px-3 py-1 bg-red-600/80 hover:bg-red-600 rounded text-xs font-semibold">Can't</button>
+                                    <button onclick="rsvp(${ev.id}, 'Going')" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-semibold transition">Ναι</button>
+                                    <button onclick="rsvp(${ev.id}, 'Not Going')" class="px-2.5 py-1.5 bg-red-600/80 hover:bg-red-600 rounded text-xs font-semibold transition">Όχι</button>
                                 </div>
                             </div>
                         </div>
@@ -277,13 +280,13 @@
             if (currentProfile?.role === 'admin') {
                 html += `
                     <div class="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
-                        <h3 class="font-bold text-md text-indigo-400 mb-2">Admin: Schedule Event</h3>
-                        <input type="text" id="e-name" placeholder="Event Name (e.g., Rehearsal)" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="datetime-local" id="e-date" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="e-loc" placeholder="Location" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="e-dress" placeholder="Dress Code" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <textarea id="e-notes" placeholder="Notes" class="w-full mb-3 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white"></textarea>
-                        <button onclick="addEvent()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded font-semibold text-sm">Create Event</button>
+                        <h3 class="font-bold text-sm text-indigo-400 mb-3">Διαχειριστής: Νέα Εκδήλωση</h3>
+                        <input type="text" id="e-name" placeholder="Όνομα Εκδήλωσης (π.χ., Πρόβα / Λιτανεία)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="datetime-local" id="e-date" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="e-loc" placeholder="Τοποθεσία" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="e-dress" placeholder="Ενδυμασία (π.χ., Στολή Παρέλασης)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <textarea id="e-notes" placeholder="Επιπλέον σημειώσεις..." class="w-full mb-3 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white"></textarea>
+                        <button onclick="addEvent()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded font-semibold text-sm">Προγραμματισμός</button>
                     </div>
                 `;
             }
@@ -317,7 +320,7 @@
             const { error } = await supabaseClient.from('band_events').insert([{ event_name, date_time, location, dress_code, notes }]);
             if (error) alert(error.message);
             else {
-                alert('Event scheduled!');
+                alert('Η εκδήλωση προστέθηκε!');
                 renderEventsTab();
             }
         }
@@ -325,15 +328,16 @@
         // --- PROFILE TAB ---
         function renderProfileTab() {
             const content = document.getElementById('content');
+            let roleDisplay = currentProfile?.role === 'admin' ? 'Διαχειριστής' : 'Μουσικός';
             content.innerHTML = `
-                <h2 class="text-2xl font-bold mb-4">My Profile</h2>
+                <h2 class="text-2xl font-bold mb-4">Το Προφίλ μου</h2>
                 <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3 mb-6">
-                    <p class="text-sm text-slate-300"><b>Name:</b> ${currentProfile?.name || 'Not set'}</p>
+                    <p class="text-sm text-slate-300"><b>Ονοματεπώνυμο:</b> ${currentProfile?.name || 'Μη ορισμένο'}</p>
                     <p class="text-sm text-slate-300"><b>Email:</b> ${currentProfile?.email}</p>
-                    <p class="text-sm text-slate-300"><b>Instrument Part:</b> <span class="text-indigo-400 font-bold">${currentProfile?.instrument || 'Not assigned'}</span></p>
-                    <p class="text-sm text-slate-300"><b>System Role:</b> <span class="uppercase text-xs bg-slate-900 px-2 py-1 rounded text-emerald-400">${currentProfile?.role}</span></p>
+                    <p class="text-sm text-slate-300"><b>Όργανο / Μέρος:</b> <span class="text-indigo-400 font-bold">${currentProfile?.instrument || 'Μη ανατεθειμένο'}</span></p>
+                    <p class="text-sm text-slate-300"><b>Ρόλος Συστήματος:</b> <span class="uppercase text-xs bg-slate-900 px-2 py-1 rounded text-emerald-400 font-medium">${roleDisplay}</span></p>
                 </div>
-                <button onclick="handleLogout()" class="w-full bg-red-600/80 hover:bg-red-600 text-white font-semibold p-3 rounded-lg transition">Sign Out</button>
+                <button onclick="handleLogout()" class="w-full bg-red-600/80 hover:bg-red-600 text-white font-semibold p-3 rounded-lg transition text-sm">Αποσύνδεση</button>
             `;
         }
 
