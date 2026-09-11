@@ -45,8 +45,6 @@
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // --- ICON GENERATOR ---
-        // Generates a clean, high-contrast SVG band logo emblem and injects it as data-URLs 
-        // for the app icon, web manifest, and UI header instantly without external image links.
         const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
             <rect width="512" height="512" rx="110" fill="#0f172a"/>
             <circle cx="256" cy="256" r="185" fill="none" stroke="#6366f1" stroke-width="14"/>
@@ -54,10 +52,9 @@
             <circle cx="210" cy="370" r="22" fill="#6366f1"/>
             <circle cx="256" cy="115" r="14" fill="#818cf8"/>
             <path d="M170 230 L230 230 M200 200 L200 260" stroke="#818cf8" stroke-width="8" stroke-linecap="round"/>
-        `;
+        </svg>`;
         const LOGO_DATA_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(LOGO_SVG);
 
-        // Dynamically inject icon data into headers
         document.getElementById('apple-touch-icon').href = LOGO_DATA_URL;
         const manifestData = {
             "name": "Φιλαρμονική Ορχήστρα Θήβας",
@@ -72,8 +69,8 @@
 
         let currentUser = null;
         let currentProfile = null;
-        let eventsViewMode = 'list'; // 'list' or 'calendar'
-        let selectedCalendarDate = null; // 'YYYY-MM-DD' format if a day is clicked
+        let eventsViewMode = 'list'; 
+        let selectedCalendarDate = null; 
 
         async function init() {
             if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
@@ -126,7 +123,11 @@
                 if (dataByEmail) data = dataByEmail;
             }
 
-            if (data) currentProfile = data;
+            if (data) {
+                currentProfile = data;
+            } else {
+                currentProfile = { email: currentUser.email, role: 'musician', instrument: 'Μη ορισμένο' };
+            }
         }
 
         function renderLogin() {
@@ -218,6 +219,10 @@
                 }
             });
 
+            if (!currentProfile && currentUser) {
+                await fetchProfile();
+            }
+
             if (activeTab === 'music') renderMusicTab();
             else if (activeTab === 'events') renderEventsTab();
             else if (activeTab === 'attendance') renderAttendanceTab();
@@ -296,7 +301,7 @@
             }
         }
 
-        // --- EVENTS TAB (CLEAN CARDS ONLY) ---
+        // --- EVENTS TAB ---
         async function renderEventsTab() {
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
@@ -308,7 +313,8 @@
                 return;
             }
 
-            const { data: responses } = await supabaseClient.from('event_responses').select('*').eq('user_email', currentProfile.email);
+            const userEmail = currentProfile?.email || currentUser?.email;
+            const { data: responses } = await supabaseClient.from('event_responses').select('*').eq('user_email', userEmail);
 
             let html = `
                 <div class="flex justify-between items-center mb-4">
@@ -415,7 +421,7 @@
             content.innerHTML = html;
         }
 
-        // --- ATTENDANCE TAB (ROLE-BASED VIEW) ---
+        // --- ATTENDANCE TAB ---
         async function renderAttendanceTab() {
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρουσίες</h2><p class="text-slate-400 text-sm">Φόρτωση αναφοράς...</p>`;
@@ -438,7 +444,6 @@
             `;
             
             if (isAdmin) {
-                // --- ADMIN VIEW: FULL BAND REPORT ---
                 html += `<p class="text-xs text-slate-400 mb-4">Συγκεντρωτική κατάσταση συμμετοχών για όλους τους μουσικούς (Admin View).</p>`;
 
                 if (!events || events.length === 0) {
@@ -480,10 +485,10 @@
                     html += `</div>`;
                 }
             } else {
-                // --- REGULAR MUSICIAN VIEW: PERSONAL ATTENDANCE SUMMARY & EXCUSES ---
                 html += `<p class="text-xs text-slate-400 mb-4">Το προσωπικό σας ιστορικό συμμετοχών και αιτιολογιών απουσίας.</p>`;
 
-                const myResponses = responses?.filter(r => r.user_email === currentProfile.email) || [];
+                const userEmail = currentProfile?.email || currentUser?.email;
+                const myResponses = responses?.filter(r => r.user_email === userEmail) || [];
                 const totalEventsCount = events?.length || 0;
                 const attendedCount = myResponses.filter(r => r.status === 'Going').length;
                 const absentCount = myResponses.filter(r => r.status === 'Not Going').length;
@@ -613,15 +618,12 @@
             renderEventsTab();
         }
 
-        // --- RSVP FUNCTION WITH MANDATORY EXCUSE VALIDATION ---
         async function rsvp(eventId, status) {
             let excuse = null;
 
             if (status === 'Not Going') {
                 excuse = prompt('Παρακαλώ εισάγετε την αιτιολογία για την απουσία σας:');
-                
                 if (excuse === null) return; 
-
                 if (excuse.trim() === '') {
                     alert('Η αιτιολογία είναι υποχρεωτική όταν δηλώνετε ότι δεν μπορείτε να παρευρεθείτε.');
                     return;
@@ -630,17 +632,18 @@
                 excuse = ''; 
             }
 
+            const userEmail = currentProfile?.email || currentUser?.email;
             const { data: existing } = await supabaseClient
                 .from('event_responses')
                 .select('*')
                 .eq('event_id', eventId)
-                .eq('user_email', currentProfile.email)
+                .eq('user_email', userEmail)
                 .single();
 
             if (existing) {
                 await supabaseClient.from('event_responses').update({ status, excuse }).eq('id', existing.id);
             } else {
-                await supabaseClient.from('event_responses').insert([{ event_id: eventId, user_email: currentProfile.email, status, excuse }]);
+                await supabaseClient.from('event_responses').insert([{ event_id: eventId, user_email: userEmail, status, excuse }]);
             }
             renderEventsTab();
         }
