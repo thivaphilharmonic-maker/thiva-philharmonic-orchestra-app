@@ -16,6 +16,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Supabase JavaScript Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- PDF.js Library for In-App Rendering & Annotations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
     <meta name="theme-color" content="#1e293b">
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
@@ -37,6 +42,32 @@
         </nav>
     </div>
 
+    <!-- PDF VIEWER & ANNOTATION MODAL CONTAINER -->
+    <div id="pdf-viewer-container" class="hidden fixed inset-0 bg-slate-950/95 z-50 flex flex-col p-3 max-w-md mx-auto">
+        <div class="flex justify-between items-center bg-slate-900 p-2.5 rounded-lg border border-slate-800 mb-2">
+            <button onclick="closePdfViewer()" class="text-slate-400 hover:text-white text-xs font-semibold">✕ Κλείσιμο</button>
+            <div class="space-x-1.5 text-xs">
+                <button onclick="changePage(-1)" class="bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded text-white">◀ Προηγ.</button>
+                <span id="page-num-display" class="text-indigo-300 font-medium">Σελίδα 1 / 1</span>
+                <button onclick="changePage(1)" class="bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded text-white">Επόμ. ▶</button>
+            </div>
+            <button onclick="clearCanvas()" class="text-red-400 hover:text-red-300 text-xs">Καθαρισμός</button>
+        </div>
+
+        <div id="canvas-wrapper" class="relative flex-1 overflow-auto bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-center p-2">
+            <canvas id="pdf-canvas" class="shadow-lg max-w-full"></canvas>
+            <canvas id="draw-canvas" class="absolute cursor-crosshair touch-none"></canvas>
+        </div>
+
+        <div class="flex justify-between items-center bg-slate-900 p-2.5 rounded-lg border border-slate-800 mt-2 text-xs">
+            <div class="space-x-1">
+                <button onclick="setTool('pen')" id="tool-pen" class="bg-indigo-600 px-3 py-1.5 rounded text-white font-semibold">Πένα</button>
+                <button onclick="setTool('eraser')" id="tool-eraser" class="bg-slate-800 px-3 py-1.5 rounded text-slate-300">Γόμα</button>
+            </div>
+            <button onclick="saveAnnotations()" class="bg-emerald-600 hover:bg-emerald-500 px-3.5 py-1.5 rounded text-white font-semibold">Αποθήκευση</button>
+        </div>
+    </div>
+
     <!-- JAVASCRIPT APP LOGIC -->
     <script>
         const SUPABASE_URL = 'https://jigwfebaxiqumrltkgli.supabase.co';
@@ -44,10 +75,8 @@
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // --- OFFICIAL LOGO URL ---
         const LOGO_URL = 'https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png';
 
-        // Set PWA manifest dynamically
         const manifestData = {
             "name": "Φιλαρμονική Ορχήστρα Θήβας",
             "short_name": "Φιλαρμονική",
@@ -63,6 +92,20 @@
         let currentProfile = null;
         let eventsViewMode = 'list'; 
         let selectedCalendarDate = null; 
+
+        // PDF Viewer State variables
+        let pdfDoc = null;
+        let pageNum = 1;
+        let pageRendering = false;
+        let pageNumPending = null;
+        let scale = 1.3;
+        let pdfCanvas = null;
+        let pdfCtx = null;
+        let drawCanvas = null;
+        let drawCtx = null;
+        let isDrawing = false;
+        let currentTool = 'pen';
+        let activePieceId = null;
 
         async function init() {
             if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
@@ -244,13 +287,17 @@
             } else {
                 html += `<div class="space-y-3">`;
                 music.forEach(item => {
+                    const cleanLink = item.pdf_link ? item.pdf_link.replace('/view?usp=sharing', '/uc?export=download') : '';
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
                             <div>
                                 <h3 class="font-bold text-base text-white">${item.piece_title}</h3>
-                                <p class="text-xs text-slate-400">${item.composer || 'Άγνωστος Συνθέτης'} • Σετ: ${item.concert_set || 'Γενικό'}</p>
+                                <p class="text-xs text-slate-400">${item.composer || 'Άγνωστος Συνθέτης'} • ${item.instrument_part || item.concert_set || 'Γενικό'}</p>
                             </div>
-                            <a href="${item.pdf_link}" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition shrink-0 ml-2">PDF</a>
+                            <div class="flex space-x-1.5 shrink-0 ml-2">
+                                ${cleanLink ? `<button onclick="openPdfViewer('${cleanLink}', ${item.id})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white">Άνοιγμα & Σημειώσεις</button>` : ''}
+                                <a href="${item.pdf_link}" target="_blank" class="bg-slate-700 hover:bg-slate-600 px-2.5 py-2 rounded-lg text-xs font-semibold transition text-slate-300" title="Εξωτερικός Σύνδεσμος">🔗</a>
+                            </div>
                         </div>
                     `;
                 });
@@ -286,6 +333,158 @@
             else {
                 alert('Η παρτιτούρα προστέθηκε επιτυχώς!');
                 renderMusicTab();
+            }
+        }
+
+        // --- PDF VIEWER & ANNOTATION LOGIC ---
+        async function openPdfViewer(pdfUrl, pieceId) {
+            activePieceId = pieceId;
+            pageNum = 1;
+            document.getElementById('pdf-viewer-container').classList.remove('hidden');
+            
+            pdfCanvas = document.getElementById('pdf-canvas');
+            pdfCtx = pdfCanvas.getContext('2d');
+            drawCanvas = document.getElementById('draw-canvas');
+            drawCtx = drawCanvas.getContext('2d');
+
+            setupDrawingEvents();
+
+            try {
+                const loadingTask = pdfjsLib.getDocument(pdfUrl);
+                pdfDoc = await loadingTask.promise;
+                await renderPage(pageNum);
+                loadSavedAnnotations();
+            } catch (error) {
+                alert('Σφάλμα φόρτωσης PDF: ' + error.message);
+                closePdfViewer();
+            }
+        }
+
+        function closePdfViewer() {
+            document.getElementById('pdf-viewer-container').classList.add('hidden');
+            pdfDoc = null;
+            pageNum = 1;
+            activePieceId = null;
+        }
+
+        async function renderPage(num) {
+            pageRendering = true;
+            const page = await pdfDoc.getPage(num);
+            const viewport = page.getViewport({ scale: scale });
+            
+            pdfCanvas.height = viewport.height;
+            pdfCanvas.width = viewport.width;
+            drawCanvas.height = viewport.height;
+            drawCanvas.width = viewport.width;
+
+            await page.render({ canvasContext: pdfCtx, viewport: viewport }).promise;
+            pageRendering = false;
+            
+            document.getElementById('page-num-display').innerText = `Σελίδα ${num} / ${pdfDoc.numPages}`;
+        }
+
+        async function changePage(val) {
+            if (!pdfDoc || pageRendering) return;
+            if (pageNum + val < 1 || pageNum + val > pdfDoc.numPages) return;
+            
+            savePageToMemory(); // Save annotations of current page before switching
+            pageNum += val;
+            await renderPage(pageNum);
+            restorePageFromMemory();
+        }
+
+        // Simple in-memory page annotation cache
+        const pageAnnotations = {};
+
+        function savePageToMemory() {
+            if (!drawCanvas) return;
+            pageAnnotations[pageNum] = drawCanvas.toDataURL();
+        }
+
+        function restorePageFromMemory() {
+            clearCanvas();
+            if (pageAnnotations[pageNum]) {
+                const img = new Image();
+                img.onload = () => {
+                    drawCtx.drawImage(img, 0, 0);
+                };
+                img.src = pageAnnotations[pageNum];
+            }
+        }
+
+        function setupDrawingEvents() {
+            drawCanvas.onmousedown = startDraw;
+            drawCanvas.onmousemove = draw;
+            drawCanvas.onmouseup = stopDraw;
+            drawCanvas.onmouseleave = stopDraw;
+
+            drawCanvas.ontouchstart = (e) => { e.preventDefault(); if(e.touches[0]) startDraw(e.touches[0]); };
+            drawCanvas.ontouchmove = (e) => { e.preventDefault(); if(e.touches[0]) draw(e.touches[0]); };
+            drawCanvas.ontouchend = (e) => { e.preventDefault(); stopDraw(); };
+        }
+
+        function startDraw(e) {
+            isDrawing = true;
+            drawCtx.beginPath();
+            const rect = drawCanvas.getBoundingClientRect();
+            drawCtx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            const rect = drawCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            if (currentTool === 'pen') {
+                drawCtx.strokeStyle = '#ef4444'; // Red pen
+                drawCtx.lineWidth = 3.5;
+                drawCtx.lineCap = 'round';
+                drawCtx.globalCompositeOperation = 'source-over';
+            } else {
+                drawCtx.lineWidth = 20;
+                drawCtx.globalCompositeOperation = 'destination-out'; // Erase drawing layer
+            }
+
+            drawCtx.lineTo(x, y);
+            drawCtx.stroke();
+        }
+
+        function stopDraw() {
+            isDrawing = false;
+        }
+
+        function setTool(tool) {
+            currentTool = tool;
+            document.getElementById('tool-pen').className = tool === 'pen' ? 'bg-indigo-600 px-3 py-1.5 rounded text-white font-semibold' : 'bg-slate-800 px-3 py-1.5 rounded text-slate-300';
+            document.getElementById('tool-eraser').className = tool === 'eraser' ? 'bg-indigo-600 px-3 py-1.5 rounded text-white font-semibold' : 'bg-slate-800 px-3 py-1.5 rounded text-slate-300';
+        }
+
+        function clearCanvas() {
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            delete pageAnnotations[pageNum];
+        }
+
+        function saveAnnotations() {
+            savePageToMemory();
+            const userEmail = currentProfile?.email || currentUser?.email;
+            const storageKey = `annotations_${userEmail}_piece_${activePieceId}`;
+            localStorage.setItem(storageKey, JSON.stringify(pageAnnotations));
+            alert('Οι σημειώσεις αποθηκεύτηκαν επιτυχώς στη συσκευή σας!');
+        }
+
+        function loadSavedAnnotations() {
+            const userEmail = currentProfile?.email || currentUser?.email;
+            const storageKey = `annotations_${userEmail}_piece_${activePieceId}`;
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    Object.keys(parsed).forEach(p => { pageAnnotations[p] = parsed[p]; });
+                    restorePageFromMemory();
+                } catch (e) {
+                    console.error(e);
+                }
             }
         }
 
@@ -338,7 +537,7 @@
                 html += `<div class="space-y-4">`;
                 displayedEvents.forEach(ev => {
                     const myResp = responses?.find(r => r.event_id === ev.id);
-                    const myStatus = myResp ? myResp.status : null; // 'Going' or 'Not Going' or null
+                    const myStatus = myResp ? myResp.status : null;
 
                     const formattedDate = formatGreekDateOnly(ev.date);
                     const dateTimeDisplay = ev.time ? `${formattedDate}, ${ev.time}` : `${formattedDate} (Ώρα αναμένεται)`;
@@ -355,7 +554,6 @@
 
                     const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${ev.event_type}</span>` : '';
 
-                    // Active state button styling
                     let goingBtnClass = "px-3 py-1.5 rounded text-xs font-semibold transition ";
                     let notGoingBtnClass = "px-3 py-1.5 rounded text-xs font-semibold transition ";
                     let statusLabel = '<span class="text-slate-400">Κατάσταση: <b class="text-slate-300">Χωρίς απάντηση</b></span>';
@@ -645,17 +843,12 @@
                 return;
             }
 
-            // Check existing response using both event_id and user_email strictly
             const { data: existing, error: fetchError } = await supabaseClient
                 .from('event_responses')
                 .select('*')
                 .eq('event_id', eventId)
                 .eq('user_email', userEmail)
                 .maybeSingle();
-
-            if (fetchError) {
-                console.error(fetchError);
-            }
 
             let error;
             if (existing) {
