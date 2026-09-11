@@ -37,9 +37,10 @@
 
         let currentUser = null;
         let currentProfile = null;
+        let eventsViewMode = 'list'; // 'list' or 'calendar'
+        let selectedCalendarDate = null; // 'YYYY-MM-DD' format if a day is clicked
 
         async function init() {
-            // Check if user is arriving via an invite or recovery link hash
             if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
                 renderSetPasswordScreen();
                 return;
@@ -75,14 +76,12 @@
         async function fetchProfile() {
             if (!currentUser) return;
             
-            // Try fetching by Supabase Auth user ID first
             let { data, error } = await supabaseClient
                 .from('profiles')
                 .select('*')
                 .eq('id', currentUser.id)
                 .single();
 
-            // Fallback: If not found by ID, try matching by email address
             if (!data && currentUser.email) {
                 const { data: dataByEmail } = await supabaseClient
                     .from('profiles')
@@ -248,7 +247,7 @@
             }
         }
 
-        // --- EVENTS TAB ---
+        // --- EVENTS TAB WITH VIEW TOGGLE ---
         async function renderEventsTab() {
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
@@ -256,13 +255,37 @@
             const { data: events } = await supabaseClient.from('band_events').select('*').order('date_time', { ascending: true });
             const { data: responses } = await supabaseClient.from('event_responses').select('*').eq('user_email', currentProfile.email);
 
-            let html = `<h2 class="text-2xl font-bold mb-4">Επερχόμενο Πρόγραμμα</h2>`;
+            let html = `
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold">Πρόγραμμα</h2>
+                    <div class="bg-slate-800 p-1 rounded-lg border border-slate-700 flex space-x-1">
+                        <button onclick="setEventsView('list')" class="px-3 py-1 rounded text-xs font-medium transition ${eventsViewMode === 'list' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}">Λίστα</button>
+                        <button onclick="setEventsView('calendar')" class="px-3 py-1 rounded text-xs font-medium transition ${eventsViewMode === 'calendar' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}">Ημερολόγιο</button>
+                    </div>
+                </div>
+            `;
 
-            if (!events || events.length === 0) {
+            if (eventsViewMode === 'calendar') {
+                html += renderCalendarGrid(events);
+            }
+
+            // Filter events if a specific calendar day was clicked
+            let displayedEvents = events || [];
+            if (eventsViewMode === 'calendar' && selectedCalendarDate) {
+                displayedEvents = displayedEvents.filter(ev => ev.date_time.startsWith(selectedCalendarDate));
+                html += `
+                    <div class="flex justify-between items-center bg-slate-800/60 p-2.5 rounded-lg border border-slate-700 mb-3 text-xs">
+                        <span class="text-indigo-300">📅 Προβολή ημέρας: <b>${selectedCalendarDate}</b></span>
+                        <button onclick="selectedCalendarDate = null; renderEventsTab();" class="text-slate-400 hover:text-white underline">Εμφάνιση όλων</button>
+                    </div>
+                `;
+            }
+
+            if (!displayedEvents || displayedEvents.length === 0) {
                 html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν προγραμματισμένες εκδηλώσεις.</div>`;
             } else {
                 html += `<div class="space-y-4">`;
-                events.forEach(ev => {
+                displayedEvents.forEach(ev => {
                     const rawResp = responses?.find(r => r.event_id === ev.id)?.status;
                     let displayResp = 'Χωρίς απάντηση';
                     if (rawResp === 'Going') displayResp = 'Θα παρευρεθώ ✅';
@@ -307,6 +330,77 @@
             content.innerHTML = html;
         }
 
+        function setEventsView(mode) {
+            eventsViewMode = mode;
+            selectedCalendarDate = null;
+            renderEventsTab();
+        }
+
+        function renderCalendarGrid(events) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth(); // Current month
+
+            const firstDayIndex = new Date(year, month, 1).getDay();
+            // Adjust so week starts on Monday (0 = Mon, 6 = Sun)
+            const startingDay = (firstDayIndex === 0) ? 6 : firstDayIndex - 1;
+            const totalDays = new Date(year, month + 1, 0).getDate();
+
+            const monthNames = ["Ιανουάριος", "Φεβρουάριος", "Μάρτιος", "Απρίλιος", "Μάιος", "Ιούνιος", "Ιούλιος", "Αύγουστος", "Σεπτέμβριος", "Οκτώβριος", "Νοέμβριος", "Δεκέμβριος"];
+            
+            // Map dates that have events
+            const eventDatesSet = new Set();
+            if (events) {
+                events.forEach(ev => {
+                    const dateStr = ev.date_time.split('T')[0];
+                    eventDatesSet.add(dateStr);
+                });
+            }
+
+            let html = `
+                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-4">
+                    <div class="text-center font-bold text-sm text-indigo-300 mb-3">${monthNames[month]} ${year}</div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-2">
+                        <div>Δευ</div><div>Τρι</div><div>Τετ</div><div>Πεμ</div><div>Παρ</div><div>Σαβ</div><div>Κυρ</div>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-xs">
+            `;
+
+            // Blank spaces for previous month offset
+            for (let i = 0; i < startingDay; i++) {
+                html += `<div></div>`;
+            }
+
+            // Days of the month
+            for (let day = 1; day <= totalDays; day++) {
+                const dayStr = String(day).padStart(2, '0');
+                const monthStr = String(month + 1).padStart(2, '0');
+                const fullDateStr = `${year}-${monthStr}-${dayStr}`;
+                const hasEvent = eventDatesSet.has(fullDateStr);
+
+                let btnClass = "py-2 rounded transition font-medium ";
+                if (hasEvent) {
+                    btnClass += "bg-indigo-600 text-white font-bold shadow hover:bg-indigo-500 cursor-pointer";
+                } else {
+                    btnClass += "text-slate-300 hover:bg-slate-700/50";
+                }
+
+                if (selectedCalendarDate === fullDateStr) {
+                    btnClass = "py-2 rounded bg-emerald-600 text-white font-bold ring-2 ring-white cursor-pointer";
+                }
+
+                html += `<button onclick="filterByDate('${fullDateStr}')" class="${btnClass}">${day}</button>`;
+            }
+
+            html += `</div></div>`;
+            return html;
+        }
+
+        function filterByDate(dateStr) {
+            selectedCalendarDate = dateStr;
+            renderEventsTab();
+        }
+
         async function rsvp(eventId, status) {
             const { data: existing } = await supabaseClient
                 .from('event_responses')
@@ -338,13 +432,11 @@
             }
         }
 
-        // --- PROFILE TAB (Read-only view mapped to database columns) ---
+        // --- PROFILE TAB ---
         function renderProfileTab() {
             const content = document.getElementById('content');
             let roleDisplay = currentProfile?.role === 'admin' ? 'Διαχειριστής' : 'Μουσικός';
             
-            // Assuming your database columns are named first_name / last_name 
-            // (or fallback gracefully if they are named differently, e.g. name)
             const firstName = currentProfile?.first_name || currentProfile?.name || '';
             const lastName = currentProfile?.last_name || '';
             const instrument = currentProfile?.instrument || 'Μη ορισμένο';
