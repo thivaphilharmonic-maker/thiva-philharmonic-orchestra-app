@@ -338,45 +338,43 @@
             }
         }
 
-        // --- PROFILE TAB ---
+        // --- PROFILE TAB (Read-only view mapped to database columns) ---
         function renderProfileTab() {
             const content = document.getElementById('content');
             let roleDisplay = currentProfile?.role === 'admin' ? 'Διαχειριστής' : 'Μουσικός';
+            
+            // Assuming your database columns are named first_name / last_name 
+            // (or fallback gracefully if they are named differently, e.g. name)
+            const firstName = currentProfile?.first_name || currentProfile?.name || '';
+            const lastName = currentProfile?.last_name || '';
+            const instrument = currentProfile?.instrument || 'Μη ορισμένο';
+
             content.innerHTML = `
                 <h2 class="text-2xl font-bold mb-4">Το Προφίλ μου</h2>
-                <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 mb-4">
+                <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3 mb-4">
                     <div>
-                        <label class="text-xs text-slate-400 block mb-1">Ονοματεπώνυμο</label>
-                        <input type="text" id="p-name" value="${currentProfile?.name || ''}" placeholder="Το ονοματεπώνυμό σας" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <span class="text-xs text-slate-400 block">Όνομα</span>
+                        <p class="text-base font-semibold text-white">${firstName || '—'}</p>
                     </div>
                     <div>
-                        <label class="text-xs text-slate-400 block mb-1">Όργανο / Μέρος (π.χ., Κλαρινέτο 1)</label>
-                        <input type="text" id="p-instrument" value="${currentProfile?.instrument || ''}" placeholder="π.χ., Κλαρινέτο 1" class="w-full p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <span class="text-xs text-slate-400 block">Επώνυμο</span>
+                        <p class="text-base font-semibold text-white">${lastName || '—'}</p>
                     </div>
-                    <p class="text-sm text-slate-300 pt-1"><b>Email:</b> ${currentProfile?.email || currentUser?.email}</p>
-                    <p class="text-sm text-slate-300"><b>Ρόλος Συστήματος:</b> <span class="uppercase text-xs bg-slate-900 px-2.5 py-1 rounded text-emerald-400 font-medium">${roleDisplay}</span></p>
+                    <div>
+                        <span class="text-xs text-slate-400 block">Όργανο / Μέρος</span>
+                        <p class="text-base font-semibold text-indigo-300">${instrument}</p>
+                    </div>
+                    <div class="pt-2 border-t border-slate-700">
+                        <span class="text-xs text-slate-400 block">Email</span>
+                        <p class="text-sm text-slate-300">${currentProfile?.email || currentUser?.email}</p>
+                    </div>
+                    <div>
+                        <span class="text-xs text-slate-400 block">Ρόλος Συστήματος</span>
+                        <span class="inline-block mt-1 uppercase text-xs bg-slate-900 px-2.5 py-1 rounded text-emerald-400 font-medium">${roleDisplay}</span>
+                    </div>
                 </div>
-                <button onclick="updateProfile()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold p-3 rounded-lg transition text-sm mb-3">Αποθήκευση Αλλαγών</button>
                 <button onclick="handleLogout()" class="w-full bg-red-600/80 hover:bg-red-600 text-white font-semibold p-3 rounded-lg transition text-sm">Αποσύνδεση</button>
             `;
-        }
-
-        async function updateProfile() {
-            const name = document.getElementById('p-name').value;
-            const instrument = document.getElementById('p-instrument').value;
-
-            const { error } = await supabaseClient
-                .from('profiles')
-                .update({ name, instrument })
-                .eq('id', currentUser.id);
-
-            if (error) {
-                alert('Σφάλμα ενημέρωσης: ' + error.message);
-            } else {
-                alert('Το προφίλ σας ενημερώθηκε επιτυχώς!');
-                await fetchProfile();
-                renderProfileTab();
-            }
         }
 
         window.onload = init;
