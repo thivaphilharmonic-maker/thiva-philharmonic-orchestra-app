@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Φιλαρμονική Θήβας">
-    <link rel="apple-touch-icon" id="apple-touch-icon">
+    <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png">
     <link rel="manifest" id="pwa-manifest">
 
     <!-- Tailwind CSS for modern mobile-first styling -->
@@ -44,18 +44,10 @@
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // --- ICON GENERATOR ---
-        const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-            <rect width="512" height="512" rx="110" fill="#0f172a"/>
-            <circle cx="256" cy="256" r="185" fill="none" stroke="#6366f1" stroke-width="14"/>
-            <path d="M220 130 C300 130 330 200 300 250 C270 300 210 320 210 370 L300 370" fill="none" stroke="#cbd5e1" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="210" cy="370" r="22" fill="#6366f1"/>
-            <circle cx="256" cy="115" r="14" fill="#818cf8"/>
-            <path d="M170 230 L230 230 M200 200 L200 260" stroke="#818cf8" stroke-width="8" stroke-linecap="round"/>
-        </svg>`;
-        const LOGO_DATA_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(LOGO_SVG);
+        // --- OFFICIAL LOGO URL ---
+        const LOGO_URL = 'https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png';
 
-        document.getElementById('apple-touch-icon').href = LOGO_DATA_URL;
+        // Set PWA manifest dynamically
         const manifestData = {
             "name": "Φιλαρμονική Ορχήστρα Θήβας",
             "short_name": "Φιλαρμονική",
@@ -63,7 +55,7 @@
             "display": "standalone",
             "background_color": "#0f172a",
             "theme_color": "#1e293b",
-            "icons": [{ "src": LOGO_DATA_URL, "sizes": "512x512", "type": "image/svg+xml" }]
+            "icons": [{ "src": LOGO_URL, "sizes": "512x512", "type": "image/png" }]
         };
         document.getElementById('pwa-manifest').href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifestData));
 
@@ -134,9 +126,7 @@
             document.getElementById('navbar').classList.add('hidden');
             document.getElementById('content').innerHTML = `
                 <div class="flex flex-col items-center justify-center min-h-[85vh] text-center">
-                    <div class="w-24 h-24 mb-4 drop-shadow-md">
-                        ${LOGO_SVG}
-                    </div>
+                    <img src="${LOGO_URL}" alt="Logo" class="w-24 h-24 mb-4 object-contain drop-shadow-md">
                     <h1 class="text-2xl font-bold text-indigo-400 mb-1">Φιλαρμονική Ορχήστρα Θήβας</h1>
                     <p class="text-slate-400 mb-6 text-sm">Συνδεθείτε για να δείτε τις παρτιτούρες σας και το πρόγραμμα.</p>
                     <div class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
@@ -153,9 +143,7 @@
             document.getElementById('navbar').classList.add('hidden');
             document.getElementById('content').innerHTML = `
                 <div class="flex flex-col items-center justify-center min-h-[85vh] text-center">
-                    <div class="w-20 h-20 mb-3 drop-shadow-md">
-                        ${LOGO_SVG}
-                    </div>
+                    <img src="${LOGO_URL}" alt="Logo" class="w-20 h-20 mb-3 object-contain drop-shadow-md">
                     <h1 class="text-2xl font-bold text-indigo-400 mb-2">Δημιουργία Κωδικού Πρόσβασης</h1>
                     <p class="text-slate-400 mb-6 text-sm">Καλώς ήρθατε! Ορίστε τον κωδικό πρόσβασής σας για να ολοκληρώσετε την εγγραφή σας στην εφαρμογή.</p>
                     <div class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
@@ -247,7 +235,7 @@
                         <h2 class="text-2xl font-bold">Παρτιτούρες</h2>
                         <p class="text-xs text-indigo-300">Όργανο: <b>${currentProfile?.instrument || 'Μη ορισμένο'}</b></p>
                     </div>
-                    <div class="w-10 h-10">${LOGO_SVG}</div>
+                    <img src="${LOGO_URL}" alt="Logo" class="w-10 h-10 object-contain">
                 </div>
             `;
 
@@ -319,7 +307,7 @@
             let html = `
                 <div class="flex justify-between items-center mb-4">
                     <div class="flex items-center space-x-2">
-                        <div class="w-8 h-8">${LOGO_SVG}</div>
+                        <img src="${LOGO_URL}" alt="Logo" class="w-8 h-8 object-contain">
                         <h2 class="text-2xl font-bold">Πρόγραμμα</h2>
                     </div>
                     <div class="bg-slate-800 p-1 rounded-lg border border-slate-700 flex space-x-1">
@@ -439,7 +427,7 @@
             let html = `
                 <div class="flex items-center justify-between mb-1">
                     <h2 class="text-2xl font-bold">Παρουσίες</h2>
-                    <div class="w-8 h-8">${LOGO_SVG}</div>
+                    <img src="${LOGO_URL}" alt="Logo" class="w-8 h-8 object-contain">
                 </div>
             `;
             
@@ -677,7 +665,7 @@
             content.innerHTML = `
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-2xl font-bold">Το Προφίλ μου</h2>
-                    <div class="w-10 h-10">${LOGO_SVG}</div>
+                    <img src="${LOGO_URL}" alt="Logo" class="w-10 h-10 object-contain">
                 </div>
                 <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3 mb-4">
                     <div>
