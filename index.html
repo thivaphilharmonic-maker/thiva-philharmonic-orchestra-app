@@ -16,15 +16,16 @@
     <div id="app" class="max-w-md mx-auto w-full flex-1 flex flex-col justify-between p-4">
         
         <!-- DYNAMIC CONTENT AREA -->
-        <div id="content" class="flex-1 pb-16">
+        <div id="content" class="flex-1 pb-20">
             <!-- Loaded dynamically via JavaScript -->
         </div>
 
         <!-- NAVIGATION BAR (Visible when logged in) -->
         <nav id="navbar" class="hidden fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 flex justify-around p-3 max-w-md mx-auto z-50">
-            <button onclick="switchTab('music')" id="nav-music" class="text-indigo-400 font-medium text-sm">Παρτιτούρες</button>
-            <button onclick="switchTab('events')" id="nav-events" class="text-slate-400 font-medium text-sm">Εκδηλώσεις</button>
-            <button onclick="switchTab('profile')" id="nav-profile" class="text-slate-400 font-medium text-sm">Προφίλ</button>
+            <button onclick="switchTab('music')" id="nav-music" class="text-indigo-400 font-medium text-xs">Παρτιτούρες</button>
+            <button onclick="switchTab('events')" id="nav-events" class="text-slate-400 font-medium text-xs">Πρόγραμμα</button>
+            <button onclick="switchTab('attendance')" id="nav-attendance" class="text-slate-400 font-medium text-xs">Παρουσίες</button>
+            <button onclick="switchTab('profile')" id="nav-profile" class="text-slate-400 font-medium text-xs">Προφίλ</button>
         </nav>
     </div>
 
@@ -168,17 +169,18 @@
 
         async function renderApp() {
             document.getElementById('navbar').classList.remove('hidden');
-            ['music', 'events', 'profile'].forEach(t => {
+            ['music', 'events', 'attendance', 'profile'].forEach(t => {
                 const btn = document.getElementById(`nav-${t}`);
                 if (t === activeTab) {
-                    btn.className = "text-indigo-400 font-bold text-sm";
+                    btn.className = "text-indigo-400 font-bold text-xs";
                 } else {
-                    btn.className = "text-slate-400 font-medium text-sm";
+                    btn.className = "text-slate-400 font-medium text-xs";
                 }
             });
 
             if (activeTab === 'music') renderMusicTab();
             else if (activeTab === 'events') renderEventsTab();
+            else if (activeTab === 'attendance') renderAttendanceTab();
             else if (activeTab === 'profile') renderProfileTab();
         }
 
@@ -247,7 +249,7 @@
             }
         }
 
-        // --- EVENTS TAB WITH MANDATORY EXCUSES & ADMIN SUMMARY ---
+        // --- EVENTS TAB (CLEAN CARDS ONLY) ---
         async function renderEventsTab() {
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
@@ -259,12 +261,7 @@
                 return;
             }
 
-            // Fetch responses (all responses if admin, or user responses if normal user)
-            let responsesQuery = supabaseClient.from('event_responses').select('*');
-            if (currentProfile?.role !== 'admin') {
-                responsesQuery = responsesQuery.eq('user_email', currentProfile.email);
-            }
-            const { data: responses } = await responsesQuery;
+            const { data: responses } = await supabaseClient.from('event_responses').select('*').eq('user_email', currentProfile.email);
 
             let html = `
                 <div class="flex justify-between items-center mb-4">
@@ -296,7 +293,7 @@
             } else {
                 html += `<div class="space-y-4">`;
                 displayedEvents.forEach(ev => {
-                    const myResp = responses?.find(r => r.event_id === ev.id && r.user_email === currentProfile.email);
+                    const myResp = responses?.find(r => r.event_id === ev.id);
                     let displayResp = 'Χωρίς απάντηση';
                     if (myResp?.status === 'Going') displayResp = 'Θα είμαι εκεί ✅';
                     else if (myResp?.status === 'Not Going') {
@@ -306,7 +303,6 @@
                     const formattedDate = formatGreekDateOnly(ev.date);
                     const dateTimeDisplay = ev.time ? `${formattedDate}, ${ev.time}` : `${formattedDate} (Ώρα αναμένεται)`;
 
-                    // Location formatting
                     let locationHtml = ev.location || 'Θα ανακοινωθεί';
                     if (ev.location && ev.location.includes('|')) {
                         const parts = ev.location.split('|');
@@ -318,29 +314,6 @@
                     }
 
                     const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${ev.event_type}</span>` : '';
-
-                    // Admin responses summary list
-                    let adminSummaryHtml = '';
-                    if (currentProfile?.role === 'admin' && responses) {
-                        const eventResponses = responses.filter(r => r.event_id === ev.id);
-                        const goingCount = eventResponses.filter(r => r.status === 'Going').length;
-                        const notGoingCount = eventResponses.filter(r => r.status === 'Not Going').length;
-
-                        adminSummaryHtml = `
-                            <div class="mt-3 pt-3 border-t border-slate-700 text-xs">
-                                <p class="text-indigo-300 font-semibold mb-1">📊 Συμμετοχές: <span class="text-emerald-400">Ναι (${goingCount})</span> | <span class="text-red-400">Όχι (${notGoingCount})</span></p>
-                        `;
-                        if (eventResponses.length > 0) {
-                            adminSummaryHtml += `<div class="max-h-28 overflow-y-auto space-y-1 bg-slate-900 p-2 rounded mt-1">`;
-                            eventResponses.forEach(r => {
-                                const statusIcon = r.status === 'Going' ? '✅' : '❌';
-                                const excuseText = r.excuse ? ` — <span class="italic text-slate-400">"${r.excuse}"</span>` : '';
-                                adminSummaryHtml += `<div class="text-[11px] text-slate-300">${statusIcon} <b>${r.user_email}</b>${excuseText}</div>`;
-                            });
-                            adminSummaryHtml += `</div>`;
-                        }
-                        adminSummaryHtml += `</div>`;
-                    }
 
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
@@ -359,7 +332,6 @@
                                     <button onclick="rsvp(${ev.id}, 'Not Going')" class="px-2.5 py-1.5 bg-red-600/80 hover:bg-red-600 rounded text-xs font-semibold transition">Δεν μπορώ</button>
                                 </div>
                             </div>
-                            ${adminSummaryHtml}
                         </div>
                     `;
                 });
@@ -388,6 +360,122 @@
                         <button onclick="addEvent()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded font-semibold text-sm">Προγραμματισμός</button>
                     </div>
                 `;
+            }
+
+            content.innerHTML = html;
+        }
+
+        // --- ATTENDANCE TAB (ROLE-BASED VIEW) ---
+        async function renderAttendanceTab() {
+            const content = document.getElementById('content');
+            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρουσίες</h2><p class="text-slate-400 text-sm">Φόρτωση αναφοράς...</p>`;
+
+            const { data: events, error: eventError } = await supabaseClient.from('band_events').select('*').order('date', { ascending: true });
+            const { data: responses, error: respError } = await supabaseClient.from('event_responses').select('*');
+
+            if (eventError || respError) {
+                content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρουσίες</h2><p class="text-red-400 text-sm">Σφάλμα φόρτωσης δεδομένων.</p>`;
+                return;
+            }
+
+            const isAdmin = currentProfile?.role === 'admin';
+
+            let html = `<h2 class="text-2xl font-bold mb-1">Παρουσίες & Συμμετοχές</h2>`;
+            
+            if (isAdmin) {
+                // --- ADMIN VIEW: FULL BAND REPORT ---
+                html += `<p class="text-xs text-slate-400 mb-4">Συγκεντρωτική κατάσταση συμμετοχών για όλους τους μουσικούς (Admin View).</p>`;
+
+                if (!events || events.length === 0) {
+                    html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν εκδηλώσεις.</div>`;
+                } else {
+                    html += `<div class="space-y-4">`;
+                    events.forEach(ev => {
+                        const eventResponses = responses?.filter(r => r.event_id === ev.id) || [];
+                        const goingList = eventResponses.filter(r => r.status === 'Going');
+                        const notGoingList = eventResponses.filter(r => r.status === 'Not Going');
+
+                        const formattedDate = formatGreekDateOnly(ev.date);
+                        const dateTimeDisplay = ev.time ? `${formattedDate}, ${ev.time}` : `${formattedDate} (Ώρα αναμένεται)`;
+                        const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${ev.event_type}</span>` : '';
+
+                        html += `
+                            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                                <div class="flex justify-between items-start mb-1">
+                                    <h3 class="font-bold text-base text-white">${ev.event_name}</h3>
+                                    ${typeBadge}
+                                </div>
+                                <p class="text-xs text-indigo-300 mb-3">📅 ${dateTimeDisplay}</p>
+                                
+                                <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
+                                    <div class="bg-slate-900 p-2.5 rounded border border-slate-700/60">
+                                        <span class="text-emerald-400 font-semibold block mb-1">✅ Θα πάνε (${goingList.length})</span>
+                                        ${goingList.length === 0 ? '<span class="text-slate-500 italic">Καμία δήλωση</span>' : 
+                                          goingList.map(r => `<div class="text-slate-300 truncate">• ${r.user_email}</div>`).join('')}
+                                    </div>
+                                    <div class="bg-slate-900 p-2.5 rounded border border-slate-700/60">
+                                        <span class="text-red-400 font-semibold block mb-1">❌ Απόντες (${notGoingList.length})</span>
+                                        ${notGoingList.length === 0 ? '<span class="text-slate-500 italic">Κανένας</span>' : 
+                                          notGoingList.map(r => `<div class="text-slate-300 mb-1">• <b>${r.user_email}</b><br><span class="text-[10px] text-slate-400 italic">"${r.excuse || 'Χωρίς αιτιολογία'}"</span></div>`).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    html += `</div>`;
+                }
+            } else {
+                // --- REGULAR MUSICIAN VIEW: PERSONAL ATTENDANCE SUMMARY & EXCUSES ---
+                html += `<p class="text-xs text-slate-400 mb-4">Το προσωπικό σας ιστορικό συμμετοχών και αιτιολογιών απουσίας.</p>`;
+
+                const myResponses = responses?.filter(r => r.user_email === currentProfile.email) || [];
+                const totalEventsCount = events?.length || 0;
+                const attendedCount = myResponses.filter(r => r.status === 'Going').length;
+                const absentCount = myResponses.filter(r => r.status === 'Not Going').length;
+                const pendingCount = totalEventsCount - (attendedCount + absentCount);
+
+                html += `
+                    <div class="grid grid-cols-3 gap-2 mb-4 text-center">
+                        <div class="bg-slate-800 p-3 rounded-xl border border-slate-700">
+                            <span class="text-xs text-slate-400 block mb-1">Παρουσίες</span>
+                            <span class="text-lg font-bold text-emerald-400">${attendedCount}</span>
+                        </div>
+                        <div class="bg-slate-800 p-3 rounded-xl border border-slate-700">
+                            <span class="text-xs text-slate-400 block mb-1">Απουσίες</span>
+                            <span class="text-lg font-bold text-red-400">${absentCount}</span>
+                        </div>
+                        <div class="bg-slate-800 p-3 rounded-xl border border-slate-700">
+                            <span class="text-xs text-slate-400 block mb-1">Χωρίς απάντηση</span>
+                            <span class="text-lg font-bold text-slate-300">${pendingCount}</span>
+                        </div>
+                    </div>
+
+                    <h3 class="font-bold text-sm text-indigo-300 mb-3">Ιστορικό Αιτιολογιών Απουσίας</h3>
+                `;
+
+                const myAbsencesWithExcuses = myResponses.filter(r => r.status === 'Not Going');
+
+                if (myAbsencesWithExcuses.length === 0) {
+                    html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν έχετε καταχωρημένες απουσίες με αιτιολογία.</div>`;
+                } else {
+                    html += `<div class="space-y-3">`;
+                    myAbsencesWithExcuses.forEach(resp => {
+                        const ev = events?.find(e => e.id === resp.event_id);
+                        const eventName = ev ? ev.event_name : 'Άγνωστη Εκδήλωση';
+                        const eventDate = ev ? formatGreekDateOnly(ev.date) : '';
+
+                        html += `
+                            <div class="bg-slate-800 p-3.5 rounded-xl border border-slate-700 text-xs">
+                                <div class="flex justify-between items-start mb-1">
+                                    <span class="font-bold text-white text-sm">${eventName}</span>
+                                    <span class="text-indigo-300">${eventDate}</span>
+                                </div>
+                                <p class="text-slate-400 mt-1">Αιτιολογία: <span class="text-slate-200 italic">"${resp.excuse || 'Χωρίς αιτιολογία'}"</span></p>
+                            </div>
+                        `;
+                    });
+                    html += `</div>`;
+                }
             }
 
             content.innerHTML = html;
@@ -477,16 +565,14 @@
             if (status === 'Not Going') {
                 excuse = prompt('Παρακαλώ εισάγετε την αιτιολογία για την απουσία σας:');
                 
-                // If user clicks cancel on the prompt
                 if (excuse === null) return; 
 
-                // If user leaves it blank or just spaces
                 if (excuse.trim() === '') {
                     alert('Η αιτιολογία είναι υποχρεωτική όταν δηλώνετε ότι δεν μπορείτε να παρευρεθείτε.');
                     return;
                 }
             } else {
-                excuse = ''; // Clear excuse if they are attending
+                excuse = ''; 
             }
 
             const { data: existing } = await supabaseClient
