@@ -348,7 +348,6 @@
                         const parts = ev.location.split('|');
                         const locName = parts[0].trim();
                         const locUrl = parts[1].trim();
-                        // Fixed: removed the second 📍 here so only the leading pin renders
                         locationHtml = `<a href="${locUrl}" target="_blank" class="text-indigo-400 hover:underline font-medium inline-flex items-center">${locName}</a>`;
                     } else if (ev.location && (ev.location.startsWith('http://') || ev.location.startsWith('https://'))) {
                         locationHtml = `<a href="${ev.location}" target="_blank" class="text-indigo-400 hover:underline">Χάρτης</a>`;
@@ -555,7 +554,12 @@
             const cleanDate = dateStr.split('T')[0];
             const [y, m, d] = cleanDate.split('-');
             if (!y || !m || !d) return dateStr;
-            return `${d}/${m}/${y}`;
+            
+            const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
+            const weekday = dateObj.toLocaleDateString('el-GR', { weekday: 'long' });
+            const capitalizedWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+            
+            return `${d}/${m}/${y} ${capitalizedWeekday}`;
         }
 
         function renderCalendarGrid(events) {
