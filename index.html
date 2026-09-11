@@ -247,7 +247,7 @@
             }
         }
 
-        // --- EVENTS TAB WITH GREEK DATES & MAP LINKS ---
+        // --- EVENTS TAB WITH SMART LOCATION NAME LINKS ---
         async function renderEventsTab() {
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
@@ -290,7 +290,6 @@
                     if (rawResp === 'Going') displayResp = 'Θα παρευρεθώ ✅';
                     else if (rawResp === 'Not Going') displayResp = 'Δεν θα μπορέσω ❌';
 
-                    // Format date strictly in Greek standard format (DD/MM/YYYY, HH:MM)
                     const formattedDate = new Date(ev.date_time).toLocaleString('el-GR', {
                         day: '2-digit',
                         month: '2-digit',
@@ -299,10 +298,15 @@
                         minute: '2-digit'
                     });
 
-                    // Handle location / Google Maps link formatting
+                    // Smart location parsing: "Location Name | URL" format support
                     let locationHtml = ev.location || 'Θα ανακοινωθεί';
-                    if (ev.location && (ev.location.startsWith('http://') || ev.location.startsWith('https://'))) {
-                        locationHtml = `<a href="${ev.location}" target="_blank" class="text-indigo-400 hover:underline inline-flex items-center">🗺️ Άνοιγμα στους Χάρτες (Google Maps)</a>`;
+                    if (ev.location && ev.location.includes('|')) {
+                        const parts = ev.location.split('|');
+                        const locName = parts[0].trim();
+                        const locUrl = parts[1].trim();
+                        locationHtml = `<a href="${locUrl}" target="_blank" class="text-indigo-400 hover:underline font-medium inline-flex items-center">${locName} 📍</a>`;
+                    } else if (ev.location && (ev.location.startsWith('http://') || ev.location.startsWith('https://'))) {
+                        locationHtml = `<a href="${ev.location}" target="_blank" class="text-indigo-400 hover:underline">Χάρτης 📍</a>`;
                     }
 
                     html += `
@@ -331,7 +335,7 @@
                         <h3 class="font-bold text-sm text-indigo-400 mb-3">Διαχειριστής: Νέα Εκδήλωση</h3>
                         <input type="text" id="e-name" placeholder="Όνομα Εκδήλωσης (π.χ., Πρόβα / Λιτανεία)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
                         <input type="datetime-local" id="e-date" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="e-loc" placeholder="Τοποθεσία ή Σύνδεσμος Google Maps URL" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="e-loc" placeholder="Τοποθεσία | URL (π.χ., Συνεδριακό | https://maps...)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
                         <input type="text" id="e-dress" placeholder="Ενδυμασία (π.χ., Στολή Παρέλασης)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
                         <textarea id="e-notes" placeholder="Επιπλέον σημειώσεις..." class="w-full mb-3 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white"></textarea>
                         <button onclick="addEvent()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2.5 rounded font-semibold text-sm">Προγραμματισμός</button>
