@@ -247,7 +247,7 @@
             }
         }
 
-        // --- EVENTS TAB USING SEPARATE 'date' & 'time' COLUMNS ---
+        // --- EVENTS TAB WITH MANDATORY EXCUSES & ADMIN SUMMARY ---
         async function renderEventsTab() {
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
@@ -259,7 +259,12 @@
                 return;
             }
 
-            const { data: responses } = await supabaseClient.from('event_responses').select('*').eq('user_email', currentProfile.email);
+            // Fetch responses (all responses if admin, or user responses if normal user)
+            let responsesQuery = supabaseClient.from('event_responses').select('*');
+            if (currentProfile?.role !== 'admin') {
+                responsesQuery = responsesQuery.eq('user_email', currentProfile.email);
+            }
+            const { data: responses } = await responsesQuery;
 
             let html = `
                 <div class="flex justify-between items-center mb-4">
@@ -291,17 +296,17 @@
             } else {
                 html += `<div class="space-y-4">`;
                 displayedEvents.forEach(ev => {
-                    const rawResp = responses?.find(r => r.event_id === ev.id)?.status;
+                    const myResp = responses?.find(r => r.event_id === ev.id && r.user_email === currentProfile.email);
                     let displayResp = 'Χωρίς απάντηση';
-                    if (rawResp === 'Going') displayResp = 'Θα παρευρεθώ ✅';
-                    else if (rawResp === 'Not Going') displayResp = 'Δεν θα μπορέσω ❌';
+                    if (myResp?.status === 'Going') displayResp = 'Θα είμαι εκεί ✅';
+                    else if (myResp?.status === 'Not Going') {
+                        displayResp = `Δεν μπορώ ❌ ${myResp.excuse ? `(${myResp.excuse})` : ''}`;
+                    }
 
-                    // Format date as DD/MM/YYYY
                     const formattedDate = formatGreekDateOnly(ev.date);
-                    // Include time only if it has been filled in
-                    const dateTimeDisplay = ev.time ? `${formattedDate}, ${ev.time}` : `${formattedDate} (Ώρα TBD)`;
+                    const dateTimeDisplay = ev.time ? `${formattedDate}, ${ev.time}` : `${formattedDate} (Ώρα αναμένεται)`;
 
-                    // Smart location parsing: "Location Name | URL" format support
+                    // Location formatting
                     let locationHtml = ev.location || 'Θα ανακοινωθεί';
                     if (ev.location && ev.location.includes('|')) {
                         const parts = ev.location.split('|');
@@ -312,8 +317,30 @@
                         locationHtml = `<a href="${ev.location}" target="_blank" class="text-indigo-400 hover:underline">Χάρτης 📍</a>`;
                     }
 
-                    // Optional event type badge
                     const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${ev.event_type}</span>` : '';
+
+                    // Admin responses summary list
+                    let adminSummaryHtml = '';
+                    if (currentProfile?.role === 'admin' && responses) {
+                        const eventResponses = responses.filter(r => r.event_id === ev.id);
+                        const goingCount = eventResponses.filter(r => r.status === 'Going').length;
+                        const notGoingCount = eventResponses.filter(r => r.status === 'Not Going').length;
+
+                        adminSummaryHtml = `
+                            <div class="mt-3 pt-3 border-t border-slate-700 text-xs">
+                                <p class="text-indigo-300 font-semibold mb-1">📊 Συμμετοχές: <span class="text-emerald-400">Ναι (${goingCount})</span> | <span class="text-red-400">Όχι (${notGoingCount})</span></p>
+                        `;
+                        if (eventResponses.length > 0) {
+                            adminSummaryHtml += `<div class="max-h-28 overflow-y-auto space-y-1 bg-slate-900 p-2 rounded mt-1">`;
+                            eventResponses.forEach(r => {
+                                const statusIcon = r.status === 'Going' ? '✅' : '❌';
+                                const excuseText = r.excuse ? ` — <span class="italic text-slate-400">"${r.excuse}"</span>` : '';
+                                adminSummaryHtml += `<div class="text-[11px] text-slate-300">${statusIcon} <b>${r.user_email}</b>${excuseText}</div>`;
+                            });
+                            adminSummaryHtml += `</div>`;
+                        }
+                        adminSummaryHtml += `</div>`;
+                    }
 
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
@@ -328,10 +355,11 @@
                             <div class="flex items-center justify-between border-t border-slate-700 pt-3">
                                 <span class="text-xs text-slate-400">Κατάσταση: <b class="text-white">${displayResp}</b></span>
                                 <div class="space-x-1">
-                                    <button onclick="rsvp(${ev.id}, 'Going')" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-semibold transition">Ναι</button>
-                                    <button onclick="rsvp(${ev.id}, 'Not Going')" class="px-2.5 py-1.5 bg-red-600/80 hover:bg-red-600 rounded text-xs font-semibold transition">Όχι</button>
+                                    <button onclick="rsvp(${ev.id}, 'Going')" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-xs font-semibold transition">Θα είμαι εκεί</button>
+                                    <button onclick="rsvp(${ev.id}, 'Not Going')" class="px-2.5 py-1.5 bg-red-600/80 hover:bg-red-600 rounded text-xs font-semibold transition">Δεν μπορώ</button>
                                 </div>
                             </div>
+                            ${adminSummaryHtml}
                         </div>
                     `;
                 });
@@ -373,7 +401,6 @@
 
         function formatGreekDateOnly(dateStr) {
             if (!dateStr) return '';
-            // Handles both 'YYYY-MM-DD' and full ISO strings safely
             const cleanDate = dateStr.split('T')[0];
             const [y, m, d] = cleanDate.split('-');
             if (!y || !m || !d) return dateStr;
@@ -443,7 +470,25 @@
             renderEventsTab();
         }
 
+        // --- RSVP FUNCTION WITH MANDATORY EXCUSE VALIDATION ---
         async function rsvp(eventId, status) {
+            let excuse = null;
+
+            if (status === 'Not Going') {
+                excuse = prompt('Παρακαλώ εισάγετε την αιτιολογία για την απουσία σας:');
+                
+                // If user clicks cancel on the prompt
+                if (excuse === null) return; 
+
+                // If user leaves it blank or just spaces
+                if (excuse.trim() === '') {
+                    alert('Η αιτιολογία είναι υποχρεωτική όταν δηλώνετε ότι δεν μπορείτε να παρευρεθείτε.');
+                    return;
+                }
+            } else {
+                excuse = ''; // Clear excuse if they are attending
+            }
+
             const { data: existing } = await supabaseClient
                 .from('event_responses')
                 .select('*')
@@ -452,9 +497,9 @@
                 .single();
 
             if (existing) {
-                await supabaseClient.from('event_responses').update({ status }).eq('id', existing.id);
+                await supabaseClient.from('event_responses').update({ status, excuse }).eq('id', existing.id);
             } else {
-                await supabaseClient.from('event_responses').insert([{ event_id: eventId, user_email: currentProfile.email, status }]);
+                await supabaseClient.from('event_responses').insert([{ event_id: eventId, user_email: currentProfile.email, status, excuse }]);
             }
             renderEventsTab();
         }
@@ -493,7 +538,7 @@
                         <p class="text-base font-semibold text-white">${firstName || '—'}</p>
                     </div>
                     <div>
-                        <span class="text-xs text-slate-400 block` + `">Επώνυμο</span>
+                        <span class="text-xs text-slate-400 block">Επώνυμο</span>
                         <p class="text-base font-semibold text-white">${lastName || '—'}</p>
                     </div>
                     <div>
