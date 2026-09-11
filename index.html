@@ -30,8 +30,8 @@
 
     <!-- JAVASCRIPT APP LOGIC -->
     <script>
-        // REPLACE THESE WITH YOUR ACTUAL SUPABASE PROJECT URL AND ANON API KEY
-        const SUPABASE_URL = 'https://jigwfebaxiqumrltkgli.supabase.co/rest/v1/';
+        // Correct base Supabase URL (without /rest/v1/)
+        const SUPABASE_URL = 'https://jigwfebaxiqumrltkgli.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_ORpUPeW5OSBOwTCTIKhPUw_SX8DtV9Z';
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -75,8 +75,8 @@
             document.getElementById('navbar').classList.add('hidden');
             document.getElementById('content').innerHTML = `
                 <div class="flex flex-col items-center justify-center min-h-[80vh] text-center">
-                    <h1 class="text-3xl font-bold text-indigo-400 mb-2">Concert Band App</h1>
-                    <p class="text-slate-400 mb-6">Log in to access your instrument parts and schedule.</p>
+                    <h1 class="text-3xl font-bold text-indigo-400 mb-2">Φιλαρμονική Ορχήστρα Θήβας</h1>
+                    <p class="text-slate-400 mb-6">Συνδεθείτε για να δείτε τις παρτιτούρες σας και το πρόγραμμα.</p>
                     <div class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                         <input type="email" id="email" placeholder="Email address" class="w-full mb-3 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
                         <input type="password" id="password" placeholder="Password" class="w-full mb-4 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
@@ -246,7 +246,6 @@
         }
 
         async function rsvp(eventId, status) {
-            // Check if response exists
             const { data: existing } = await supabaseClient
                 .from('event_responses')
                 .select('*')
