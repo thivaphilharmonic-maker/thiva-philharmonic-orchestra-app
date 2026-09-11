@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Thiva Philharmonic Orchestra App</title>
+    <!-- Tailwind CSS for modern mobile-first styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JavaScript Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <meta name="theme-color" content="#1e293b">
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+
+    <!-- APP CONTAINER -->
+    <div id="app" class="max-w-md mx-auto w-full flex-1 flex flex-col justify-between p-4">
+        
+        <!-- DYNAMIC CONTENT AREA -->
+        <div id="content" class="flex-1 pb-16">
+            <!-- Loaded dynamically via JavaScript -->
+        </div>
+
+        <!-- NAVIGATION BAR (Visible when logged in) -->
+        <nav id="navbar" class="hidden fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 flex justify-around p-3 max-w-md mx-auto z-50">
+            <button onclick="switchTab('music')" id="nav-music" class="text-indigo-400 font-medium text-sm">Sheet Music</button>
+            <button onclick="switchTab('events')" id="nav-events" class="text-slate-400 font-medium text-sm">Events & RSVPs</button>
+            <button onclick="switchTab('profile')" id="nav-profile" class="text-slate-400 font-medium text-sm">Profile</button>
+        </nav>
+    </div>
+
+    <!-- JAVASCRIPT APP LOGIC -->
+    <script>
+        // REPLACE THESE WITH YOUR ACTUAL SUPABASE PROJECT URL AND ANON API KEY
+        const SUPABASE_URL = 'https://jigwfebaxiqumrltkgli.supabase.co/rest/v1/';
+        const SUPABASE_ANON_KEY = 'sb_publishable_ORpUPeW5OSBOwTCTIKhPUw_SX8DtV9Z';
+
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let currentUser = null;
+        let currentProfile = null;
+
+        async function init() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session) {
+                currentUser = session.user;
+                await fetchProfile();
+                renderApp();
+            } else {
+                renderLogin();
+            }
+
+            supabaseClient.auth.onAuthStateChange(async (event, session) => {
+                if (session) {
+                    currentUser = session.user;
+                    await fetchProfile();
+                    renderApp();
+                } else {
+                    currentUser = null;
+                    currentProfile = null;
+                    renderLogin();
+                }
+            });
+        }
+
+        async function fetchProfile() {
+            const { data, error } = await supabaseClient
+                .from('profiles')
+                .select('*')
+                .eq('id', currentUser.id)
+                .single();
+            if (data) currentProfile = data;
+        }
+
+        function renderLogin() {
+            document.getElementById('navbar').classList.add('hidden');
+            document.getElementById('content').innerHTML = `
+                <div class="flex flex-col items-center justify-center min-h-[80vh] text-center">
+                    <h1 class="text-3xl font-bold text-indigo-400 mb-2">Concert Band App</h1>
+                    <p class="text-slate-400 mb-6">Log in to access your instrument parts and schedule.</p>
+                    <div class="w-full bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                        <input type="email" id="email" placeholder="Email address" class="w-full mb-3 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
+                        <input type="password" id="password" placeholder="Password" class="w-full mb-4 p-3 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-indigo-500">
+                        <button onclick="handleLogin()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold p-3 rounded-lg transition">Sign In</button>
+                    </div>
+                    <p id="error-msg" class="text-red-400 mt-4 text-sm"></p>
+                </div>
+            `;
+        }
+
+        async function handleLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) {
+                document.getElementById('error-msg').innerText = error.message;
+            }
+        }
+
+        async function handleLogout() {
+            await supabaseClient.auth.signOut();
+        }
+
+        let activeTab = 'music';
+        function switchTab(tab) {
+            activeTab = tab;
+            renderApp();
+        }
+
+        async function renderApp() {
+            document.getElementById('navbar').classList.remove('hidden');
+            // Highlight active nav button
+            ['music', 'events', 'profile'].forEach(t => {
+                const btn = document.getElementById(`nav-${t}`);
+                if (t === activeTab) {
+                    btn.className = "text-indigo-400 font-bold text-sm";
+                } else {
+                    btn.className = "text-slate-400 font-medium text-sm";
+                }
+            });
+
+            if (activeTab === 'music') renderMusicTab();
+            else if (activeTab === 'events') renderEventsTab();
+            else if (activeTab === 'profile') renderProfileTab();
+        }
+
+        // --- MUSIC TAB ---
+        async function renderMusicTab() {
+            const content = document.getElementById('content');
+            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Sheet Music (${currentProfile?.instrument || 'Loading...'})</h2><p class="text-slate-400">Loading library...</p>`;
+
+            const { data: music, error } = await supabaseClient.from('music_library').select('*');
+
+            if (error) {
+                content.innerHTML = `<p class="text-red-400">Error loading music: ${error.message}</p>`;
+                return;
+            }
+
+            let html = `<h2 class="text-2xl font-bold mb-1">Sheet Music</h2>`;
+            html += `<p class="text-xs text-indigo-300 mb-4">Filtered for your part: <b>${currentProfile?.instrument}</b></p>`;
+
+            if (!music || music.length === 0) {
+                html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400">No sheet music assigned to your part yet.</div>`;
+            } else {
+                html += `<div class="space-y-3">`;
+                music.forEach(item => {
+                    html += `
+                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                            <div>
+                                <h3 class="font-bold text-lg text-white">${item.piece_title}</h3>
+                                <p class="text-xs text-slate-400">${item.composer || 'Unknown Composer'} • Set: ${item.concert_set || 'General'}</p>
+                            </div>
+                            <a href="${item.pdf_link}" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm font-semibold transition">Open PDF</a>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+
+            // If Admin, show quick add form
+            if (currentProfile?.role === 'admin') {
+                html += `
+                    <div class="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
+                        <h3 class="font-bold text-md text-indigo-400 mb-2">Admin: Add Sheet Music</h3>
+                        <input type="text" id="m-title" placeholder="Piece Title" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="m-composer" placeholder="Composer" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="m-set" placeholder="Concert Set" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="m-part" placeholder="Instrument Part (e.g., Flute 1)" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="m-link" placeholder="Google Drive Share Link" class="w-full mb-3 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <button onclick="addMusic()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded font-semibold text-sm">Upload to Library</button>
+                    </div>
+                `;
+            }
+
+            content.innerHTML = html;
+        }
+
+        async function addMusic() {
+            const piece_title = document.getElementById('m-title').value;
+            const composer = document.getElementById('m-composer').value;
+            const concert_set = document.getElementById('m-set').value;
+            const instrument_part = document.getElementById('m-part').value;
+            const pdf_link = document.getElementById('m-link').value;
+
+            const { error } = await supabaseClient.from('music_library').insert([{ piece_title, composer, concert_set, instrument_part, pdf_link }]);
+            if (error) alert(error.message);
+            else {
+                alert('Added successfully!');
+                renderMusicTab();
+            }
+        }
+
+        // --- EVENTS TAB ---
+        async function renderEventsTab() {
+            const content = document.getElementById('content');
+            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Events & RSVPs</h2><p class="text-slate-400">Loading events...</p>`;
+
+            const { data: events } = await supabaseClient.from('band_events').select('*').order('date_time', { ascending: true });
+            const { data: responses } = await supabaseClient.from('event_responses').select('*').eq('user_email', currentProfile.email);
+
+            let html = `<h2 class="text-2xl font-bold mb-4">Upcoming Schedule</h2>`;
+
+            if (!events || events.length === 0) {
+                html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400">No upcoming events scheduled.</div>`;
+            } else {
+                html += `<div class="space-y-4">`;
+                events.forEach(ev => {
+                    const myResp = responses?.find(r => r.event_id === ev.id)?.status || 'Not Answered';
+                    const formattedDate = new Date(ev.date_time).toLocaleString();
+
+                    html += `
+                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                            <h3 class="font-bold text-lg text-white">${ev.event_name}</h3>
+                            <p class="text-xs text-indigo-300 mb-1">📅 ${formattedDate}</p>
+                            <p class="text-xs text-slate-400 mb-2">📍 ${ev.location || 'TBD'} | 👔 Dress: ${ev.dress_code || 'Casual'}</p>
+                            ${ev.notes ? `<p class="text-xs bg-slate-900 p-2 rounded mb-3 text-slate-300">${ev.notes}</p>` : ''}
+                            
+                            <div class="flex items-center justify-between border-t border-slate-700 pt-3">
+                                <span class="text-xs text-slate-400">Your RSVP: <b class="text-white">${myResp}</b></span>
+                                <div class="space-x-1">
+                                    <button onclick="rsvp(${ev.id}, 'Going')" class="px-3 py-1 bg-emerald-600/80 hover:bg-emerald-600 rounded text-xs font-semibold">Going</button>
+                                    <button onclick="rsvp(${ev.id}, 'Not Going')" class="px-3 py-1 bg-red-600/80 hover:bg-red-600 rounded text-xs font-semibold">Can't</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            }
+
+            // If Admin, show quick add event form
+            if (currentProfile?.role === 'admin') {
+                html += `
+                    <div class="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
+                        <h3 class="font-bold text-md text-indigo-400 mb-2">Admin: Schedule Event</h3>
+                        <input type="text" id="e-name" placeholder="Event Name (e.g., Rehearsal)" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="datetime-local" id="e-date" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="e-loc" placeholder="Location" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="e-dress" placeholder="Dress Code" class="w-full mb-2 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <textarea id="e-notes" placeholder="Notes" class="w-full mb-3 p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white"></textarea>
+                        <button onclick="addEvent()" class="w-full bg-emerald-600 hover:bg-emerald-500 py-2 rounded font-semibold text-sm">Create Event</button>
+                    </div>
+                `;
+            }
+
+            content.innerHTML = html;
+        }
+
+        async function rsvp(eventId, status) {
+            // Check if response exists
+            const { data: existing } = await supabaseClient
+                .from('event_responses')
+                .select('*')
+                .eq('event_id', eventId)
+                .eq('user_email', currentProfile.email)
+                .single();
+
+            if (existing) {
+                await supabaseClient.from('event_responses').update({ status }).eq('id', existing.id);
+            } else {
+                await supabaseClient.from('event_responses').insert([{ event_id: eventId, user_email: currentProfile.email, status }]);
+            }
+            renderEventsTab();
+        }
+
+        async function addEvent() {
+            const event_name = document.getElementById('e-name').value;
+            const date_time = document.getElementById('e-date').value;
+            const location = document.getElementById('e-loc').value;
+            const dress_code = document.getElementById('e-dress').value;
+            const notes = document.getElementById('e-notes').value;
+
+            const { error } = await supabaseClient.from('band_events').insert([{ event_name, date_time, location, dress_code, notes }]);
+            if (error) alert(error.message);
+            else {
+                alert('Event scheduled!');
+                renderEventsTab();
+            }
+        }
+
+        // --- PROFILE TAB ---
+        function renderProfileTab() {
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4">My Profile</h2>
+                <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3 mb-6">
+                    <p class="text-sm text-slate-300"><b>Name:</b> ${currentProfile?.name || 'Not set'}</p>
+                    <p class="text-sm text-slate-300"><b>Email:</b> ${currentProfile?.email}</p>
+                    <p class="text-sm text-slate-300"><b>Instrument Part:</b> <span class="text-indigo-400 font-bold">${currentProfile?.instrument || 'Not assigned'}</span></p>
+                    <p class="text-sm text-slate-300"><b>System Role:</b> <span class="uppercase text-xs bg-slate-900 px-2 py-1 rounded text-emerald-400">${currentProfile?.role}</span></p>
+                </div>
+                <button onclick="handleLogout()" class="w-full bg-red-600/80 hover:bg-red-600 text-white font-semibold p-3 rounded-lg transition">Sign Out</button>
+            `;
+        }
+
+        // Run app initialization on load
+        window.onload = init;
+    </script>
+</body>
+</html>
