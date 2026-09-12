@@ -309,7 +309,7 @@
             } else {
                 html += `<div class="space-y-3">`;
                 music.forEach(item => {
-                    const filePath = item.pdf_path || item.pdf_link; // Support legacy or new paths
+                    const filePath = item.pdf_path || item.pdf_link;
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
                             <div>
@@ -389,7 +389,6 @@
 
         // --- SECURE PDF VIEWER & WATERMARK LOGIC ---
         async function openSecurePdf(filePath, pieceId) {
-            // Generate a 60-second secure signed URL from Supabase Storage
             const { data, error } = await supabaseClient.storage
                 .from('sheet-music')
                 .createSignedUrl(filePath, 60);
@@ -444,7 +443,6 @@
 
             await page.render({ canvasContext: pdfCtx, viewport: viewport }).promise;
 
-            // --- WATERMARK APPLICATION ---
             applyWatermarks(pdfCtx, viewport.width, viewport.height);
 
             pageRendering = false;
@@ -455,20 +453,18 @@
             const userEmail = currentProfile?.email || currentUser?.email || 'musician';
             const timestamp = new Date().toISOString();
 
-            // Method B: Non-Intrusive Footer Copyright / License Line
             ctx.save();
             ctx.font = '10px monospace';
-            ctx.fillStyle = 'rgba(148, 163, 184, 0.6)'; // Subtle slate color
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
             ctx.textAlign = 'center';
             const watermarkText = `Licensed exclusively to: ${userEmail} • Φιλαρμονική Ορχήστρα Θήβας`;
             ctx.fillText(watermarkText, width / 2, height - 12);
             ctx.restore();
 
-            // Method A: Hidden Zero-Width Unicode Forensic Fingerprint (Embedded as metadata/text drawing)
             const fingerprintString = textToZeroWidth(`UID:${userEmail}|TS:${timestamp}`);
             ctx.save();
             ctx.font = '1px sans-serif';
-            ctx.fillStyle = 'rgba(0,0,0,0)'; // Fully transparent
+            ctx.fillStyle = 'rgba(0,0,0,0)';
             ctx.fillText(fingerprintString, 5, 10);
             ctx.restore();
         }
@@ -537,7 +533,7 @@
             const y = e.clientY - rect.top;
 
             if (currentTool === 'pen') {
-                drawCtx.strokeStyle = '#ef4444'; // Red pen
+                drawCtx.strokeStyle = '#ef4444';
                 drawCtx.lineWidth = 3.5;
                 drawCtx.lineCap = 'round';
                 drawCtx.globalCompositeOperation = 'source-over';
@@ -721,15 +717,14 @@
             content.innerHTML = html;
         }
 
-        // --- ATTENDANCE TAB ---
+        // --- ATTENDANCE TAB (Updated with Profiles Join Query) ---
         async function renderAttendanceTab() {
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρουσίες</h2><p class="text-slate-400 text-sm">Φόρτωση αναφοράς...</p>`;
 
             const { data: events, error: eventError } = await supabaseClient.from('band_events').select('*').order('date', { ascending: true });
-            const { data: responses, error: respError } = await supabaseClient.from('event_responses').select('*');
-
-            if (eventError || respError) {
+            
+            if (eventError) {
                 content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρουσίες</h2><p class="text-red-400 text-sm">Σφάλμα φόρτωσης δεδομένων.</p>`;
                 return;
             }
@@ -750,8 +745,21 @@
                     html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν εκδηλώσεις.</div>`;
                 } else {
                     html += `<div class="space-y-4">`;
-                    events.forEach(ev => {
-                        const eventResponses = responses?.filter(r => r.event_id === ev.id) || [];
+                    for (const ev of events) {
+                        const { data: attendanceData, error: attError } = await supabaseClient
+                            .from('event_responses')
+                            .select(`
+                                status,
+                                excuse,
+                                user_email,
+                                profiles (
+                                    full_name,
+                                    instrument
+                                )
+                            `)
+                            .eq('event_id', ev.id);
+
+                        const eventResponses = attendanceData || [];
                         const goingList = eventResponses.filter(r => r.status === 'Going');
                         const notGoingList = eventResponses.filter(r => r.status === 'Not Going');
 
@@ -771,27 +779,36 @@
                                     <div class="bg-slate-900 p-2.5 rounded border border-slate-700/60">
                                         <span class="text-emerald-400 font-semibold block mb-1">✅ Θα πάνε (${goingList.length})</span>
                                         ${goingList.length === 0 ? '<span class="text-slate-500 italic">Καμία δήλωση</span>' : 
-                                          goingList.map(r => `<div class="text-slate-300 truncate">• ${r.user_email}</div>`).join('')}
+                                          goingList.map(r => {
+                                              const fullName = r.profiles?.full_name || r.user_email;
+                                              const instrument = r.profiles?.instrument ? ` (${r.profiles.instrument})` : '';
+                                              return `<div class="text-slate-300 truncate">• ${fullName}${instrument}</div>`;
+                                          }).join('')}
                                     </div>
                                     <div class="bg-slate-900 p-2.5 rounded border border-slate-700/60">
                                         <span class="text-red-400 font-semibold block mb-1">❌ Απόντες (${notGoingList.length})</span>
                                         ${notGoingList.length === 0 ? '<span class="text-slate-500 italic">Κανένας</span>' : 
-                                          notGoingList.map(r => `<div class="text-slate-300 mb-1">• <b>${r.user_email}</b><br><span class="text-[10px] text-slate-400 italic">"${r.excuse || 'Χωρίς αιτιολογία'}"</span></div>`).join('')}
+                                          notGoingList.map(r => {
+                                              const fullName = r.profiles?.full_name || r.user_email;
+                                              const instrument = r.profiles?.instrument ? ` (${r.profiles.instrument})` : '';
+                                              return `<div class="text-slate-300 mb-1">• <b>${fullName}${instrument}</b><br><span class="text-[10px] text-slate-400 italic">"${r.excuse || 'Χωρίς αιτιολογία'}"</span></div>`;
+                                          }).join('')}
                                     </div>
                                 </div>
                             </div>
                         `;
-                    });
+                    }
                     html += `</div>`;
                 }
             } else {
                 html += `<p class="text-xs text-slate-400 mb-4">Το προσωπικό σας ιστορικό συμμετοχών και αιτιολογιών απουσίας.</p>`;
 
                 const userEmail = currentProfile?.email || currentUser?.email;
-                const myResponses = responses?.filter(r => r.user_email === userEmail) || [];
+                const { data: myResponses } = await supabaseClient.from('event_responses').select('*').eq('user_email', userEmail);
+                
                 const totalEventsCount = events?.length || 0;
-                const attendedCount = myResponses.filter(r => r.status === 'Going').length;
-                const absentCount = myResponses.filter(r => r.status === 'Not Going').length;
+                const attendedCount = myResponses?.filter(r => r.status === 'Going').length || 0;
+                const absentCount = myResponses?.filter(r => r.status === 'Not Going').length || 0;
                 const pendingCount = totalEventsCount - (attendedCount + absentCount);
 
                 html += `
@@ -813,7 +830,7 @@
                     <h3 class="font-bold text-sm text-indigo-300 mb-3">Ιστορικό Αιτιολογιών Απουσίας</h3>
                 `;
 
-                const myAbsencesWithExcuses = myResponses.filter(r => r.status === 'Not Going');
+                const myAbsencesWithExcuses = myResponses?.filter(r => r.status === 'Not Going') || [];
 
                 if (myAbsencesWithExcuses.length === 0) {
                     html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν έχετε καταχωρημένες απουσίες με αιτιολογία.</div>`;
