@@ -101,7 +101,14 @@
         //    It should look something like:
         //    'BLR4rZ8...about 87 chars...g7kM'
         // =====================================================================
-        const VAPID_PUBLIC_KEY = 'PASTE_YOUR_VAPID_PUBLIC_KEY_HERE';
+        const VAPID_PUBLIC_KEY = 'AhU8WtA7XUm5cj96uAbQ7ddxE9qCkwxHrSSL8vH9niOe';
+
+        // =====================================================================
+        // 👇 PASTE YOUR SUPABASE EDGE FUNCTION URL HERE (ONCE YOU DEPLOY IT)
+        //    Example:
+        //    'https://jigwfebaxiqumrltkgli.supabase.co/functions/v1/push-sender'
+        // =====================================================================
+        const PUSH_EDGE_FUNCTION_URL = 'https://jigwfebaxiqumrltkgli.supabase.co/functions/v1/push-sender';
 
         function urlB64ToUint8Array(base64String) {
             if (!base64String || base64String === 'PASTE_YOUR_VAPID_PUBLIC_KEY_HERE') return null;
@@ -113,6 +120,25 @@
                 outputArray[i] = rawData.charCodeAt(i);
             }
             return outputArray;
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[char]));
+        }
+
+        function safeExternalUrl(value) {
+            try {
+                const url = new URL(String(value));
+                return ['http:', 'https:'].includes(url.protocol) ? escapeHtml(url.href) : '#';
+            } catch {
+                return '#';
+            }
         }
 
         const manifestData = {
@@ -377,7 +403,7 @@
                 <div class="flex items-center justify-between mb-3">
                     <div>
                         <h2 class="text-2xl font-bold">Παρτιτούρες</h2>
-                        <p class="text-xs text-indigo-300">Όργανο: <b>${myInstrument || 'Μη ορισμένο'}</b></p>
+                        <p class="text-xs text-indigo-300">Όργανο: <b>${escapeHtml(myInstrument || 'Μη ορισμένο')}</b></p>
                     </div>
                     <img src="${LOGO_URL}" alt="Logo" class="w-10 h-10 object-contain">
                 </div>
@@ -389,18 +415,18 @@
                     <div class="grid grid-cols-2 gap-2">
                         <select id="mf-instrument" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white" onchange="updateMusicFilter('instrument', this.value)">
                             <option value="all">Όλα τα όργανα (${allInstruments.length})</option>
-                            ${allInstruments.map(ins => `<option value="${ins}" ${musicFilter.instrument === ins ? 'selected':''}>${ins}</option>`).join('')}
+                            ${allInstruments.map(ins => `<option value="${escapeHtml(ins)}" ${musicFilter.instrument === ins ? 'selected':''}>${escapeHtml(ins)}</option>`).join('')}
                         </select>
                         <select id="mf-set" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white" onchange="updateMusicFilter('set', this.value)">
                             <option value="all">Όλα τα σετ (${allSets.length})</option>
-                            ${allSets.map(s => `<option value="${s}" ${musicFilter.set === s ? 'selected':''}>${s}</option>`).join('')}
+                            ${allSets.map(s => `<option value="${escapeHtml(s)}" ${musicFilter.set === s ? 'selected':''}>${escapeHtml(s)}</option>`).join('')}
                         </select>
                     </div>
                     ${myInstrument ? `
                     <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
                         <input type="checkbox" id="mf-myonly" ${musicFilter.myInstrumentOnly ? 'checked':''}
                             onchange="updateMusicFilter('myInstrumentOnly', this.checked)" class="accent-indigo-600 w-4 h-4">
-                        <span>Εμφάνιση <b class="text-indigo-300">μόνο του οργάνου μου</b> (${myInstrument})</span>
+                        <span>Εμφάνιση <b class="text-indigo-300">μόνο του οργάνου μου</b> (${escapeHtml(myInstrument)})</span>
                     </label>
                     ` : ''}
                     <div class="text-[10px] text-slate-500 pt-0.5">${displayed.length} από ${(music||[]).length} παρτιτούρες</div>
@@ -416,11 +442,11 @@
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
                             <div class="min-w-0">
-                                <h3 class="font-bold text-base text-white truncate">${item.piece_title}</h3>
-                                <p class="text-xs text-slate-400 truncate">${item.composer || 'Άγνωστος Συνθέτης'} • ${item.instrument_part || item.concert_set || 'Γενικό'}</p>
+                                <h3 class="font-bold text-base text-white truncate">${escapeHtml(item.piece_title)}</h3>
+                                <p class="text-xs text-slate-400 truncate">${escapeHtml(item.composer || 'Άγνωστος Συνθέτης')} • ${escapeHtml(item.instrument_part || item.concert_set || 'Γενικό')}</p>
                             </div>
                             <div class="flex space-x-1.5 shrink-0 ml-2">
-                                ${filePath ? `<button onclick="openSecurePdf('${filePath}', ${item.id})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white whitespace-nowrap">Άνοιγμα & Σημειώσεις</button>` : ''}
+                                ${filePath ? `<button onclick="openSecurePdf('${encodeURIComponent(filePath)}', ${Number(item.id)})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white whitespace-nowrap">Άνοιγμα & Σημειώσεις</button>` : ''}
                             </div>
                         </div>
                     `;
@@ -496,6 +522,7 @@
         }
 
         async function openSecurePdf(filePath, pieceId) {
+            filePath = decodeURIComponent(filePath);
             const { data, error } = await supabaseClient.storage
                 .from('sheet-music')
                 .createSignedUrl(filePath, 60);
@@ -769,19 +796,19 @@
                     const myStatus = myResp ? myResp.status : null;
 
                     const formattedDate = formatGreekDateOnly(ev.date);
-                    const dateTimeDisplay = ev.time ? `${formattedDate}, ${ev.time}` : `${formattedDate} (Ώρα αναμένεται)`;
+                    const dateTimeDisplay = ev.time ? `${formattedDate}, ${escapeHtml(ev.time)}` : `${formattedDate} (Ώρα αναμένεται)`;
 
-                    let locationHtml = ev.location || 'Θα ανακοινωθεί';
+                    let locationHtml = escapeHtml(ev.location || 'Θα ανακοινωθεί');
                     if (ev.location && ev.location.includes('|')) {
                         const parts = ev.location.split('|');
                         const locName = parts[0].trim();
                         const locUrl = parts[1].trim();
-                        locationHtml = `<a href="${locUrl}" target="_blank" class="text-indigo-400 hover:underline font-medium inline-flex items-center">${locName}</a>`;
+                        locationHtml = `<a href="${safeExternalUrl(locUrl)}" rel="noopener noreferrer" target="_blank" class="text-indigo-400 hover:underline font-medium inline-flex items-center">${escapeHtml(locName)}</a>`;
                     } else if (ev.location && (ev.location.startsWith('http://') || ev.location.startsWith('https://'))) {
-                        locationHtml = `<a href="${ev.location}" target="_blank" class="text-indigo-400 hover:underline">Χάρτης</a>`;
+                        locationHtml = `<a href="${safeExternalUrl(ev.location)}" rel="noopener noreferrer" target="_blank" class="text-indigo-400 hover:underline">Χάρτης</a>`;
                     }
 
-                    const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${ev.event_type}</span>` : '';
+                    const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${escapeHtml(ev.event_type)}</span>` : '';
 
                     let goingBtnClass = "px-3 py-1.5 rounded text-xs font-semibold transition ";
                     let notGoingBtnClass = "px-3 py-1.5 rounded text-xs font-semibold transition ";
@@ -803,12 +830,12 @@
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
                             <div class="flex justify-between items-start mb-1">
-                                <h3 class="font-bold text-base text-white">${ev.event_name}</h3>
+                                <h3 class="font-bold text-base text-white">${escapeHtml(ev.event_name)}</h3>
                                 ${typeBadge}
                             </div>
                             <p class="text-xs text-indigo-300 mb-1">📅 ${dateTimeDisplay}</p>
-                            <p class="text-xs text-slate-400 mb-2">📍 ${locationHtml} | 👔 Ενδυμασία: ${ev.dress_code || 'Καθημερινή'}</p>
-                            ${ev.notes ? `<p class="text-xs bg-slate-900 p-2.5 rounded mb-3 text-slate-300">${ev.notes}</p>` : ''}
+                            <p class="text-xs text-slate-400 mb-2">📍 ${locationHtml} | 👔 Ενδυμασία: ${escapeHtml(ev.dress_code || 'Καθημερινή')}</p>
+                            ${ev.notes ? `<p class="text-xs bg-slate-900 p-2.5 rounded mb-3 text-slate-300">${escapeHtml(ev.notes)}</p>` : ''}
                             
                             <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-t border-slate-700 pt-3 gap-2">
                                 <div class="text-xs">${statusLabel}</div>
@@ -874,23 +901,40 @@
             if (isAdmin) {
                 html += `<p class="text-xs text-slate-400 mb-2">Συγκεντρωτική κατάσταση συμμετοχών για όλους τους μουσικούς (Admin View).</p>`;
 
+                const vapidOK = !!urlB64ToUint8Array(VAPID_PUBLIC_KEY);
+                const edgeFnOK = !!(PUSH_EDGE_FUNCTION_URL && PUSH_EDGE_FUNCTION_URL.length > 20);
+                const statusColor = (!vapidOK || !edgeFnOK) ? 'bg-amber-900/40 border-amber-700/50 text-amber-300' : 'bg-emerald-900/40 border-emerald-700/50 text-emerald-300';
+
                 html += `
                     <details class="mb-4 bg-slate-800 p-3 rounded-xl border border-slate-700">
                         <summary class="cursor-pointer font-bold text-sm text-amber-300 select-none">📢 Αποστολή Push Ειδοποίησης (Admin)</summary>
                         <div class="mt-3 space-y-2">
-                            <p class="text-[11px] text-slate-400">Στείλτε άμεση ειδοποίηση σε όλους τους μουσικούς που έχουν ενεργοποιήσει τα push notifications.</p>
+                            <div class="${statusColor} border rounded p-2 text-[11px] space-y-0.5">
+                                <div><b>Κατάσταση συστήματος:</b></div>
+                                <div>• VAPID Δημόσιο Κλειδί: ${vapidOK ? '✅ Ορισμένο' : '⚠️ Δεν έχει οριστεί ακόμα'}</div>
+                                <div>• Edge Function (Sender): ${edgeFnOK ? '✅ Ρυθμισμένο' : '⚠️ Δεν έχει οριστεί URL (απαιτείται για αποστολή από κινητό)'}</div>
+                            </div>
+                            <div id="push-sub-count" class="text-[11px] text-slate-400 bg-slate-900/60 border border-slate-700/60 rounded p-2">🔢 Φόρτωση αριθμού συνδρομητών...</div>
+                            <p class="text-[11px] text-slate-400 pt-1">Στείλτε άμεση ειδοποίηση σε όλους τους μουσικούς που έχουν ενεργοποιήσει τα push notifications.</p>
                             <input id="push-title" type="text" placeholder="Τίτλος (π.χ., Νέα Πρόβα)"
                                 class="w-full p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
                             <textarea id="push-body" rows="2" placeholder="Μήνυμα (π.χ., Πρόβα Δευτέρα 19:00 στο Ωδείο)"
                                 class="w-full p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white"></textarea>
-                            <button onclick="sendAdminAnnouncement()"
-                                class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded text-xs font-bold">📨 Προεπισκόπηση & Εκκίνηση Αποστολής</button>
-                            <div id="push-preview" class="hidden bg-slate-900 p-2 rounded border border-slate-700 text-xs space-y-1">
-                                <p class="text-slate-500">Προεπισκόπηση:</p>
-                                <p id="push-preview-title" class="text-white font-bold"></p>
-                                <p id="push-preview-body" class="text-slate-300 text-[11px]"></p>
-                                <p class="text-[10px] text-amber-400/80 mt-1">⚠️ Για την πραγματική αποστολή, τρέξτε το <b>push_notifications/send_push_notification.js</b> στον υπολογιστή σας. Αυτό το κουμπί δημιουργεί το αρχείο <b>announcement.json</b> με τα δεδομένα.</p>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                <button onclick="sendAdminAnnouncementDirect()"
+                                    class="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded text-xs font-bold disabled:opacity-40"
+                                    ${(!vapidOK || !edgeFnOK) ? 'disabled title="Χρειάζεται VAPID + Edge Function URL"' : ''}>🚀 Απευθείας Αποστολή
+                                    <span class="block text-[9px] font-normal opacity-80">(από το app / iPhone)</span>
+                                </button>
+                                <button onclick="sendAdminAnnouncementDownloadJSON()"
+                                    class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded text-xs font-bold">💾 Προεπισκόπηση & JSON
+                                    <span class="block text-[9px] font-normal opacity-80">(για send_push_notification.js)</span>
+                                </button>
                             </div>
+
+                            <div id="push-preview" class="hidden bg-slate-900 p-2 rounded border border-slate-700 text-xs space-y-1"></div>
+                            <div id="push-result" class="hidden text-xs rounded p-2 space-y-1"></div>
                         </div>
                     </details>
                 `;
@@ -919,13 +963,13 @@
                         const notGoingList = eventResponses.filter(r => r.status === 'Not Going');
 
                         const formattedDate = formatGreekDateOnly(ev.date);
-                        const dateTimeDisplay = ev.time ? `${formattedDate}, ${ev.time}` : `${formattedDate} (Ώρα αναμένεται)`;
-                        const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${ev.event_type}</span>` : '';
+                        const dateTimeDisplay = ev.time ? `${formattedDate}, ${escapeHtml(ev.time)}` : `${formattedDate} (Ώρα αναμένεται)`;
+                        const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${escapeHtml(ev.event_type)}</span>` : '';
 
                         html += `
                             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
                                 <div class="flex justify-between items-start mb-1">
-                                    <h3 class="font-bold text-base text-white">${ev.event_name}</h3>
+                                    <h3 class="font-bold text-base text-white">${escapeHtml(ev.event_name)}</h3>
                                     ${typeBadge}
                                 </div>
                                 <p class="text-xs text-indigo-300 mb-3">📅 ${dateTimeDisplay}</p>
@@ -937,7 +981,7 @@
                                           goingList.map(r => {
                                               const fullName = `${r.profiles?.first_name || ''} ${r.profiles?.last_name || ''}`.trim() || r.user_email;
                                               const instrument = r.profiles?.instrument ? ` (${r.profiles.instrument})` : '';
-                                              return `<div class="text-slate-300 truncate">• ${fullName}${instrument}</div>`;
+                                              return `<div class="text-slate-300 truncate">• ${escapeHtml(fullName)}${escapeHtml(instrument)}</div>`;
                                           }).join('')}
                                     </div>
                                     <div class="bg-slate-900 p-2.5 rounded border border-slate-700/60">
@@ -946,7 +990,7 @@
                                           notGoingList.map(r => {
                                               const fullName = `${r.profiles?.first_name || ''} ${r.profiles?.last_name || ''}`.trim() || r.user_email;
                                               const instrument = r.profiles?.instrument ? ` (${r.profiles.instrument})` : '';
-                                              return `<div class="text-slate-300 mb-1">• <b>${fullName}${instrument}</b><br><span class="text-[10px] text-slate-400 italic">"${r.excuse || 'Χωρίς αιτιολογία'}"</span></div>`;
+                                              return `<div class="text-slate-300 mb-1">• <b>${escapeHtml(fullName)}${escapeHtml(instrument)}</b><br><span class="text-[10px] text-slate-400 italic">"${escapeHtml(r.excuse || 'Χωρίς αιτιολογία')}"</span></div>`;
                                           }).join('')}
                                     </div>
                                 </div>
@@ -982,7 +1026,7 @@
                         </div>
                     </div>
 
-                    <h3 class="font-bold text-sm text-indigo-300 mb-3">Ιστορικό Αιτιολογιών Απουσίας</h3>
+                        <h3 class="font-bold text-sm text-indigo-300 mb-3">Ιστορικό Αιτιολογιών Απουσίας</h3>
                 `;
 
                 const myAbsencesWithExcuses = myResponses?.filter(r => r.status === 'Not Going') || [];
@@ -999,10 +1043,10 @@
                         html += `
                             <div class="bg-slate-800 p-3.5 rounded-xl border border-slate-700 text-xs">
                                 <div class="flex justify-between items-start mb-1">
-                                    <span class="font-bold text-white text-sm">${eventName}</span>
-                                    <span class="text-indigo-300">${eventDate}</span>
+                                    <span class="font-bold text-white text-sm">${escapeHtml(eventName)}</span>
+                                    <span class="text-indigo-300">${escapeHtml(eventDate)}</span>
                                 </div>
-                                <p class="text-slate-400 mt-1">Αιτιολογία: <span class="text-slate-200 italic">"${resp.excuse || 'Χωρίς αιτιολογία'}"</span></p>
+                                <p class="text-slate-400 mt-1">Αιτιολογία: <span class="text-slate-200 italic">"${escapeHtml(resp.excuse || 'Χωρίς αιτιολογία')}"</span></p>
                             </div>
                         `;
                     });
@@ -1011,6 +1055,29 @@
             }
 
             content.innerHTML = html;
+
+            if (isAdmin) {
+                setTimeout(loadSubscriberCount, 10);
+            }
+        }
+
+        async function loadSubscriberCount() {
+            const el = document.getElementById('push-sub-count');
+            if (!el) return;
+            try {
+                const { count, error } = await supabaseClient
+                    .from('push_subscriptions')
+                    .select('*', { count: 'exact', head: true });
+                if (error) throw error;
+                const c = count || 0;
+                const emailsResp = await supabaseClient.from('push_subscriptions').select('user_email');
+                const u = new Set((emailsResp.data || []).map(x => x.user_email).filter(Boolean)).size;
+                el.className = 'text-[11px] bg-indigo-900/40 border border-indigo-700/50 rounded p-2 text-indigo-200';
+                el.innerHTML = `🔢 <b>${c}</b> ενεργές συνδρομές push (<b>${u}</b> μοναδικοί χρήστες)<br><span class="opacity-80 text-[10px]">Κάθε συσκευή / browser είναι ξεχωριστή συνδρομή.</span>`;
+            } catch (e) {
+                el.className = 'text-[11px] bg-red-900/30 border border-red-700/50 rounded p-2 text-red-300';
+                el.innerText = '⚠ Αδυναμία φόρτωσης αριθμού συνδρομητών: ' + e.message;
+            }
         }
 
         function setEventsView(mode) {
@@ -1249,50 +1316,101 @@
             }
         }
 
-        async function sendAdminAnnouncement() {
+        async function sendAdminAnnouncementDirect() {
             const titleEl = document.getElementById('push-title');
             const bodyEl  = document.getElementById('push-body');
             const title = (titleEl.value || '').trim();
             const body  = (bodyEl.value  || '').trim();
 
-            if (!title || !body) {
-                alert('Παρακαλώ συμπληρώστε τίτλο και μήνυμα.');
+            if (!title || !body) { alert('Παρακαλώ συμπληρώστε τίτλο και μήνυμα.'); return; }
+
+            const edgeUrl = PUSH_EDGE_FUNCTION_URL || '';
+            if (edgeUrl.length < 10) {
+                alert('Δεν έχει οριστεί το URL του Edge Function!\n\nΕνεργοποιήστε το push-sender στο Supabase Dashboard -> Edge Functions και επικολλήστε το URL στη μεταβλητή PUSH_EDGE_FUNCTION_URL στο index.html.');
                 return;
             }
 
-            document.getElementById('push-preview').classList.remove('hidden');
-            document.getElementById('push-preview-title').innerText = title;
-            document.getElementById('push-preview-body').innerText  = body;
+            const preview = document.getElementById('push-preview');
+            const result  = document.getElementById('push-result');
+            preview.classList.remove('hidden');
+            preview.className = 'hidden';
+            result.classList.remove('hidden');
+            result.className = 'text-xs rounded p-2 space-y-1 bg-slate-900 border border-slate-700';
+            result.innerHTML = `<span class="text-slate-300">📡 Σύνδεση με τον server...</span>`;
+
+            try {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                if (!session) throw new Error('Δεν υπάρχει ενεργή σύνδεση.');
+
+                const res = await fetch(edgeUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session.access_token}`,
+                        'apikey': SUPABASE_ANON_KEY
+                    },
+                    body: JSON.stringify({ title, body, url: './index.html#events' })
+                });
+
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+                const ok = data.sent || 0;
+                const fail = data.failed || 0;
+                const total = data.total || (ok + fail);
+                const note = data.note || '';
+
+                result.className = 'text-xs rounded p-2 space-y-1 bg-emerald-900/40 border border-emerald-700/50';
+                result.innerHTML =
+                    `<div class="font-bold text-emerald-200">✅ Αποστολή ολοκληρώθηκε</div>` +
+                    `<div class="text-emerald-100">Επιτυχείς: <b>${ok}</b> • Αποτυχίες: <b>${fail}</b> • Σύνολο: <b>${total}</b></div>` +
+                    (note ? `<div class="text-[11px] text-emerald-200/80 mt-1 italic">${note}</div>` : '') +
+                    ((data && data.failed_details && data.failed_details.length) ?
+                        `<div class="mt-1 text-[10px] text-emerald-100/80 max-h-16 overflow-auto">Αποτυχίες: ${data.failed_details.map(x => x.email + ' (' + x.reason + ')').join(', ')}</div>` : '');
+            } catch (e) {
+                result.className = 'text-xs rounded p-2 space-y-1 bg-red-900/40 border border-red-700/50';
+                result.innerHTML = `<div class="font-bold text-red-200">❌ Σφάλμα αποστολής</div><div class="text-red-100">${e.message}</div><div class="text-[10px] text-red-200/70 mt-1">Αν το σφάλμα έχει να κάνει με "secrets" ή "VAPID", ελέγξτε αν έχουν οριστεί σωστά τα Secrets στο Edge Function (Supabase Dashboard).</div>`;
+            }
+        }
+
+        function sendAdminAnnouncementDownloadJSON() {
+            const titleEl = document.getElementById('push-title');
+            const bodyEl  = document.getElementById('push-body');
+            const title = (titleEl.value || '').trim();
+            const body  = (bodyEl.value  || '').trim();
+
+            if (!title || !body) { alert('Παρακαλώ συμπληρώστε τίτλο και μήνυμα.'); return; }
+
+            const preview = document.getElementById('push-preview');
+            preview.classList.remove('hidden');
+            preview.className = 'bg-slate-900 p-2 rounded border border-slate-700 text-xs space-y-1';
+            preview.innerHTML = `
+                <p class="text-slate-500">Προεπισκόπηση ειδοποίησης:</p>
+                <p class="text-white font-bold text-sm">${escapeHtml(title)}</p>
+                <p class="text-slate-300 text-[12px]">${escapeHtml(body)}</p>
+                <p class="text-[10px] text-amber-400/80 mt-1">⚠️ Αυτό το κουμπί απλά δημιουργεί το αρχείο <b>announcement.json</b>. Για πραγματική αποστολή, χρησιμοποιήστε είτε το <b>send_push_notification.js</b> στον υπολογιστή σας, είτε ενεργοποιήστε το Edge Function για απευθείας αποστολή από το κινητό.</p>
+            `;
 
             const sentBy = currentProfile?.email || currentUser?.email;
 
-            const { data: subs } = await supabaseClient
+            supabaseClient
                 .from('push_subscriptions')
-                .select('endpoint, p256dh_key, auth_secret, user_email');
-
-            const count = subs?.length || 0;
-
-            const payload = {
-                announcement: {
-                    title,
-                    body,
-                    url: './index.html#events',
-                    sent_by_email: sentBy,
-                    target_count: count,
-                    created_at: new Date().toISOString()
-                },
-                subscriptions: subs || []
-            };
-
-            downloadJSON(payload, 'announcement.json');
-
-            alert(`✅ Δημιουργήθηκε το αρχείο announcement.json!\n\n` +
-                  `Στόχοι: ${count} συνδρομητές\n\n` +
-                  `Επόμενο βήμα:\n` +
-                  `Ανοίξτε ένα τερματικό (terminal), πηγαίνετε στον φάκελο push_notifications\n` +
-                  `και εκτελέστε:\n` +
-                  `  node send_push_notification.js\n\n` +
-                  `(Το αρχείο announcement.json πρέπει να βρίσκεται στον ίδιο φάκελο.)`);
+                .select('endpoint, p256dh_key, auth_secret, user_email')
+                .then(({ data: subs, error }) => {
+                    const count = subs?.length || 0;
+                    const payload = {
+                        announcement: {
+                            title, body,
+                            url: './index.html#events',
+                            sent_by_email: sentBy,
+                            target_count: count,
+                            created_at: new Date().toISOString()
+                        },
+                        subscriptions: subs || []
+                    };
+                    downloadJSON(payload, 'announcement.json');
+                    alert(`✅ Δημιουργήθηκε το αρχείο announcement.json!\n\nΣτόχοι: ${count} συνδρομητές\n\nΕπόμενο βήμα:\nΜετακινήστε το announcement.json στον φάκελο push_notifications/ και τρέξτε:\n  node send_push_notification.js\n\n(Ή αν έχετε ενεργοποιήσει το Edge Function, χρησιμοποιήστε το κουμπί 🚀 Απευθείας Αποστολή.)`);
+                });
         }
 
         function downloadJSON(obj, filename) {
@@ -1356,19 +1474,19 @@
                 <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3 mb-4">
                     <div>
                         <span class="text-xs text-slate-400 block">Όνομα</span>
-                        <p class="text-base font-semibold text-white">${firstName || '—'}</p>
+                        <p class="text-base font-semibold text-white">${escapeHtml(firstName || '—')}</p>
                     </div>
                     <div>
                         <span class="text-xs text-slate-400 block">Επώνυμο</span>
-                        <p class="text-base font-semibold text-white">${lastName || '—'}</p>
+                        <p class="text-base font-semibold text-white">${escapeHtml(lastName || '—')}</p>
                     </div>
                     <div>
                         <span class="text-xs text-slate-400 block">Όργανο / Μέρος</span>
-                        <p class="text-base font-semibold text-indigo-300">${instrument}</p>
+                        <p class="text-base font-semibold text-indigo-300">${escapeHtml(instrument)}</p>
                     </div>
                     <div class="pt-2 border-t border-slate-700">
                         <span class="text-xs text-slate-400 block">Email</span>
-                        <p class="text-sm text-slate-300">${currentProfile?.email || currentUser?.email}</p>
+                        <p class="text-sm text-slate-300">${escapeHtml(currentProfile?.email || currentUser?.email || '')}</p>
                     </div>
                     <div>
                         <span class="text-xs text-slate-400 block">Ρόλος Συστήματος</span>
