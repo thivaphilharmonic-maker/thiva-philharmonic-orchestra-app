@@ -23,9 +23,25 @@
     </script>
     <meta name="theme-color" content="#1e293b">
     <style>
-        #pdf-viewer-container {
-            -webkit-user-select: none;
-            user-select: none;
+        /* 1. Make the container fill the full mobile viewport */
+        .pdf-viewer-container, .modal-content {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            margin: 0;
+            padding: 0;
+            background: #1a1a1a; /* Dark background looks better around sheet music */
+            z-index: 9999;
+        }
+        
+        /* 2. Force the embedded PDF viewer to fill 100% of that container */
+        .pdf-viewer-container iframe, 
+        .pdf-viewer-container embed {
+            width: 100%;
+            height: 100%;
+            border: none;
         }
     </style>
 </head>
