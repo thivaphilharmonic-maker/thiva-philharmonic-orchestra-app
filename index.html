@@ -23,7 +23,6 @@
     </script>
     <meta name="theme-color" content="#1e293b">
     <style>
-        /* 1. Make the container fill the full mobile viewport */
         .pdf-viewer-container, .modal-content {
             width: 100vw;
             height: 100vh;
@@ -32,11 +31,9 @@
             left: 0;
             margin: 0;
             padding: 0;
-            background: #1a1a1a; /* Dark background looks better around sheet music */
+            background: #1a1a1a;
             z-index: 9999;
         }
-        
-        /* 2. Force the embedded PDF viewer to fill 100% of that container */
         .pdf-viewer-container iframe, 
         .pdf-viewer-container embed {
             width: 100%;
@@ -115,7 +112,6 @@
         let eventsViewMode = 'list'; 
         let selectedCalendarDate = null; 
 
-        // PDF Viewer State variables
         let pdfDoc = null;
         let pageNum = 1;
         let pageRendering = false;
@@ -387,7 +383,6 @@
             }
         }
 
-        // --- SECURE PDF VIEWER & WATERMARK LOGIC ---
         async function openSecurePdf(filePath, pieceId) {
             const { data, error } = await supabaseClient.storage
                 .from('sheet-music')
@@ -717,7 +712,7 @@
             content.innerHTML = html;
         }
 
-        // --- ATTENDANCE TAB (Updated with Profiles Join Query) ---
+        // --- ATTENDANCE TAB (Fixed to map first_name + last_name correctly) ---
         async function renderAttendanceTab() {
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρουσίες</h2><p class="text-slate-400 text-sm">Φόρτωση αναφοράς...</p>`;
@@ -781,7 +776,7 @@
                                         <span class="text-emerald-400 font-semibold block mb-1">✅ Θα πάνε (${goingList.length})</span>
                                         ${goingList.length === 0 ? '<span class="text-slate-500 italic">Καμία δήλωση</span>' : 
                                           goingList.map(r => {
-                                              const fullName = r.profiles?.full_name || r.user_email;
+                                              const fullName = `${r.profiles?.first_name || ''} ${r.profiles?.last_name || ''}`.trim() || r.user_email;
                                               const instrument = r.profiles?.instrument ? ` (${r.profiles.instrument})` : '';
                                               return `<div class="text-slate-300 truncate">• ${fullName}${instrument}</div>`;
                                           }).join('')}
@@ -790,7 +785,7 @@
                                         <span class="text-red-400 font-semibold block mb-1">❌ Απόντες (${notGoingList.length})</span>
                                         ${notGoingList.length === 0 ? '<span class="text-slate-500 italic">Κανένας</span>' : 
                                           notGoingList.map(r => {
-                                              const fullName = r.profiles?.full_name || r.user_email;
+                                              const fullName = `${r.profiles?.first_name || ''} ${r.profiles?.last_name || ''}`.trim() || r.user_email;
                                               const instrument = r.profiles?.instrument ? ` (${r.profiles.instrument})` : '';
                                               return `<div class="text-slate-300 mb-1">• <b>${fullName}${instrument}</b><br><span class="text-[10px] text-slate-400 italic">"${r.excuse || 'Χωρίς αιτιολογία'}"</span></div>`;
                                           }).join('')}
@@ -1006,7 +1001,6 @@
             }
         }
 
-        // --- PROFILE TAB ---
         function renderProfileTab() {
             const content = document.getElementById('content');
             let roleDisplay = currentProfile?.role === 'admin' ? 'Διαχειριστής' : 'Μουσικός';
