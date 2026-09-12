@@ -125,7 +125,17 @@
         let currentTool = 'pen';
         let activePieceId = null;
 
+        let currentCalendarMonth = new Date().getMonth();
+        let currentCalendarYear = new Date().getFullYear();
+
+        let musicFilter = { search: '', instrument: 'all', set: 'all', myInstrumentOnly: false };
+
+        let pushSubscription = null;
+
         async function init() {
+            registerServiceWorker();
+            initPushSupport();
+
             if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
                 renderSetPasswordScreen();
                 return;
@@ -156,6 +166,28 @@
                     renderLogin();
                 }
             });
+        }
+
+        function registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('./sw.js').then(reg => {
+                        console.log('Service Worker registered:', reg.scope);
+                    }).catch(err => {
+                        console.warn('Service Worker registration failed:', err);
+                    });
+                });
+            }
+        }
+
+        async function initPushSupport() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+            try {
+                const reg = await navigator.serviceWorker.ready;
+                pushSubscription = await reg.pushManager.getSubscription();
+            } catch (e) {
+                console.warn('Push init failed:', e);
+            }
         }
 
         async function fetchProfile() {
@@ -290,30 +322,86 @@
                 return;
             }
 
+            const allInstruments = [...new Set((music || []).map(m => (m.instrument_part || '').trim()).filter(Boolean))].sort();
+            const allSets = [...new Set((music || []).map(m => (m.concert_set || '').trim()).filter(Boolean))].sort();
+            const myInstrument = (currentProfile?.instrument || '').trim();
+
+            let displayed = music || [];
+
+            if (musicFilter.myInstrumentOnly && myInstrument) {
+                displayed = displayed.filter(m => {
+                    const part = (m.instrument_part || '').trim().toLowerCase();
+                    const mi = myInstrument.toLowerCase();
+                    return part === mi || part.includes(mi) || mi.includes(part) || part.includes(mi.split(' ')[0]);
+                });
+            }
+
+            if (musicFilter.instrument && musicFilter.instrument !== 'all') {
+                displayed = displayed.filter(m => (m.instrument_part || '').trim() === musicFilter.instrument);
+            }
+
+            if (musicFilter.set && musicFilter.set !== 'all') {
+                displayed = displayed.filter(m => (m.concert_set || '').trim() === musicFilter.set);
+            }
+
+            if (musicFilter.search && musicFilter.search.trim()) {
+                const q = musicFilter.search.trim().toLowerCase();
+                displayed = displayed.filter(m =>
+                    (m.piece_title || '').toLowerCase().includes(q) ||
+                    (m.composer || '').toLowerCase().includes(q) ||
+                    (m.instrument_part || '').toLowerCase().includes(q) ||
+                    (m.concert_set || '').toLowerCase().includes(q)
+                );
+            }
+
             let html = `
-                <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center justify-between mb-3">
                     <div>
                         <h2 class="text-2xl font-bold">Παρτιτούρες</h2>
-                        <p class="text-xs text-indigo-300">Όργανο: <b>${currentProfile?.instrument || 'Μη ορισμένο'}</b></p>
+                        <p class="text-xs text-indigo-300">Όργανο: <b>${myInstrument || 'Μη ορισμένο'}</b></p>
                     </div>
                     <img src="${LOGO_URL}" alt="Logo" class="w-10 h-10 object-contain">
                 </div>
+
+                <div class="bg-slate-800 p-3 rounded-xl border border-slate-700 mb-3 space-y-2">
+                    <input type="text" id="mf-search" value="${musicFilter.search}" placeholder="🔍 Αναζήτηση τίτλου, συνθέτη..."
+                        class="w-full p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white"
+                        oninput="updateMusicFilter('search', this.value)">
+                    <div class="grid grid-cols-2 gap-2">
+                        <select id="mf-instrument" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white" onchange="updateMusicFilter('instrument', this.value)">
+                            <option value="all">Όλα τα όργανα (${allInstruments.length})</option>
+                            ${allInstruments.map(ins => `<option value="${ins}" ${musicFilter.instrument === ins ? 'selected':''}>${ins}</option>`).join('')}
+                        </select>
+                        <select id="mf-set" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white" onchange="updateMusicFilter('set', this.value)">
+                            <option value="all">Όλα τα σετ (${allSets.length})</option>
+                            ${allSets.map(s => `<option value="${s}" ${musicFilter.set === s ? 'selected':''}>${s}</option>`).join('')}
+                        </select>
+                    </div>
+                    ${myInstrument ? `
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+                        <input type="checkbox" id="mf-myonly" ${musicFilter.myInstrumentOnly ? 'checked':''}
+                            onchange="updateMusicFilter('myInstrumentOnly', this.checked)" class="accent-indigo-600 w-4 h-4">
+                        <span>Εμφάνιση <b class="text-indigo-300">μόνο του οργάνου μου</b> (${myInstrument})</span>
+                    </label>
+                    ` : ''}
+                    <div class="text-[10px] text-slate-500 pt-0.5">${displayed.length} από ${(music||[]).length} παρτιτούρες</div>
+                </div>
             `;
 
-            if (!music || music.length === 0) {
-                html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν διαθέσιμες παρτιτούρες ακόμα.</div>`;
+            if (!displayed || displayed.length === 0) {
+                html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">${(music||[]).length === 0 ? 'Δεν υπάρχουν διαθέσιμες παρτιτούρες ακόμα.' : 'Καμία παρτιτούρα δεν ταιριάζει με τα φίλτρα σας.'}</div>`;
             } else {
                 html += `<div class="space-y-3">`;
-                music.forEach(item => {
+                displayed.forEach(item => {
                     const filePath = item.pdf_path || item.pdf_link;
                     html += `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
-                            <div>
-                                <h3 class="font-bold text-base text-white">${item.piece_title}</h3>
-                                <p class="text-xs text-slate-400">${item.composer || 'Άγνωστος Συνθέτης'} • ${item.instrument_part || item.concert_set || 'Γενικό'}</p>
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-base text-white truncate">${item.piece_title}</h3>
+                                <p class="text-xs text-slate-400 truncate">${item.composer || 'Άγνωστος Συνθέτης'} • ${item.instrument_part || item.concert_set || 'Γενικό'}</p>
                             </div>
                             <div class="flex space-x-1.5 shrink-0 ml-2">
-                                ${filePath ? `<button onclick="openSecurePdf('${filePath}', ${item.id})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white">Άνοιγμα & Σημειώσεις</button>` : ''}
+                                ${filePath ? `<button onclick="openSecurePdf('${filePath}', ${item.id})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white whitespace-nowrap">Άνοιγμα & Σημειώσεις</button>` : ''}
                             </div>
                         </div>
                     `;
@@ -339,6 +427,11 @@
             }
 
             content.innerHTML = html;
+        }
+
+        function updateMusicFilter(key, value) {
+            musicFilter[key] = value;
+            renderMusicTab();
         }
 
         async function addMusic() {
@@ -514,27 +607,53 @@
             drawCanvas.ontouchend = (e) => { e.preventDefault(); stopDraw(); };
         }
 
+        function getCanvasScaleRatio() {
+            if (!drawCanvas) return { scaleX: 1, scaleY: 1 };
+            const rect = drawCanvas.getBoundingClientRect();
+            return {
+                scaleX: drawCanvas.width / rect.width,
+                scaleY: drawCanvas.height / rect.height
+            };
+        }
+
+        function getCanvasCoords(e) {
+            if (!drawCanvas) return { x: 0, y: 0 };
+            const rect = drawCanvas.getBoundingClientRect();
+            const { scaleX, scaleY } = getCanvasScaleRatio();
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        function getToolLineWidth() {
+            const { scaleX, scaleY } = getCanvasScaleRatio();
+            const avgScale = (scaleX + scaleY) / 2 || 1;
+            if (currentTool === 'pen') {
+                return 3.5 * avgScale;
+            }
+            return 20 * avgScale;
+        }
+
         function startDraw(e) {
             isDrawing = true;
             drawCtx.beginPath();
-            const rect = drawCanvas.getBoundingClientRect();
-            drawCtx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+            const { x, y } = getCanvasCoords(e);
+            drawCtx.moveTo(x, y);
         }
 
         function draw(e) {
             if (!isDrawing) return;
-            const rect = drawCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const { x, y } = getCanvasCoords(e);
 
             if (currentTool === 'pen') {
                 drawCtx.strokeStyle = '#ef4444';
-                drawCtx.lineWidth = 3.5;
+                drawCtx.lineWidth = getToolLineWidth();
                 drawCtx.lineCap = 'round';
                 drawCtx.globalCompositeOperation = 'source-over';
             } else {
-                drawCtx.lineWidth = 20;
-                drawCtx.globalCompositeOperation = 'destination-out'; 
+                drawCtx.lineWidth = getToolLineWidth();
+                drawCtx.globalCompositeOperation = 'destination-out';
             }
 
             drawCtx.lineTo(x, y);
@@ -857,6 +976,18 @@
         function setEventsView(mode) {
             eventsViewMode = mode;
             selectedCalendarDate = null;
+            currentCalendarMonth = new Date().getMonth();
+            currentCalendarYear = new Date().getFullYear();
+            renderEventsTab();
+        }
+
+        function changeCalendarMonth(delta) {
+            let m = currentCalendarMonth + delta;
+            let y = currentCalendarYear;
+            if (m < 0) { m = 11; y--; }
+            if (m > 11) { m = 0; y++; }
+            currentCalendarMonth = m;
+            currentCalendarYear = y;
             renderEventsTab();
         }
 
@@ -874,9 +1005,8 @@
         }
 
         function renderCalendarGrid(events) {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = now.getMonth();
+            const year = currentCalendarYear;
+            const month = currentCalendarMonth;
 
             const firstDayIndex = new Date(year, month, 1).getDay();
             const startingDay = (firstDayIndex === 0) ? 6 : firstDayIndex - 1;
@@ -894,9 +1024,16 @@
                 });
             }
 
+            const today = new Date();
+            const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
             let html = `
                 <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-4">
-                    <div class="text-center font-bold text-sm text-indigo-300 mb-3">${monthNames[month]} ${year}</div>
+                    <div class="flex justify-between items-center mb-3">
+                        <button onclick="changeCalendarMonth(-1)" class="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-white text-xs font-semibold">◀ Προηγ.</button>
+                        <div class="text-center font-bold text-sm text-indigo-300">${monthNames[month]} ${year}</div>
+                        <button onclick="changeCalendarMonth(1)" class="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-white text-xs font-semibold">Επόμ. ▶</button>
+                    </div>
                     <div class="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-2">
                         <div>Δευ</div><div>Τρι</div><div>Τετ</div><div>Πεμ</div><div>Παρ</div><div>Σαβ</div><div>Κυρ</div>
                     </div>
@@ -912,16 +1049,19 @@
                 const monthStr = String(month + 1).padStart(2, '0');
                 const fullDateStr = `${year}-${monthStr}-${dayStr}`;
                 const hasEvent = eventDatesSet.has(fullDateStr);
+                const isToday = fullDateStr === todayStr;
 
-                let btnClass = "py-2 rounded transition font-medium ";
+                let btnClass = "py-2 rounded transition font-medium text-[11px] ";
                 if (hasEvent) {
                     btnClass += "bg-indigo-600 text-white font-bold shadow hover:bg-indigo-500 cursor-pointer";
+                } else if (isToday) {
+                    btnClass += "bg-slate-700 text-amber-300 border border-amber-400/50";
                 } else {
                     btnClass += "text-slate-300 hover:bg-slate-700/50";
                 }
 
                 if (selectedCalendarDate === fullDateStr) {
-                    btnClass = "py-2 rounded bg-emerald-600 text-white font-bold ring-2 ring-white cursor-pointer";
+                    btnClass = "py-2 rounded bg-emerald-600 text-white font-bold ring-2 ring-white cursor-pointer text-[11px]";
                 }
 
                 html += `<button onclick="filterByDate('${fullDateStr}')" class="${btnClass}">${day}</button>`;
@@ -1001,6 +1141,38 @@
             }
         }
 
+        async function enablePushNotifications() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                alert('Οι ειδοποιήσεις δεν υποστηρίζονται από αυτό το πρόγραμμα περιήγησης.');
+                return;
+            }
+            try {
+                const reg = await navigator.serviceWorker.ready;
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    alert('Η άδεια ειδοποιήσεων δεν εγκρίθηκε.');
+                    return;
+                }
+                alert('Επιτυχής ενεργοποίηση! Οι ειδοποιήσεις θα εμφανίζονται όταν υπάρχει νέο πρόγραμμα ή ανακοίνωση.\n\nΣημείωση: Ο διαχειριστής πρέπει να ρυθμίσει το VAPID δημόσιο/ιδιωτικό κλειδί στο backend για την αποστολή push notifications.');
+                await initPushSupport();
+                renderProfileTab();
+            } catch (e) {
+                alert('Σφάλμα ενεργοποίησης ειδοποιήσεων: ' + e.message);
+            }
+        }
+
+        async function disablePushNotifications() {
+            if (!pushSubscription) { renderProfileTab(); return; }
+            try {
+                await pushSubscription.unsubscribe();
+                pushSubscription = null;
+                alert('Οι ειδοποιήσεις απενεργοποιήθηκαν.');
+                renderProfileTab();
+            } catch (e) {
+                alert('Σφάλμα απενεργοποίησης: ' + e.message);
+            }
+        }
+
         function renderProfileTab() {
             const content = document.getElementById('content');
             let roleDisplay = currentProfile?.role === 'admin' ? 'Διαχειριστής' : 'Μουσικός';
@@ -1008,6 +1180,39 @@
             const firstName = currentProfile?.first_name || currentProfile?.name || '';
             const lastName = currentProfile?.last_name || '';
             const instrument = currentProfile?.instrument || 'Μη ορισμένο';
+
+            const pushSupported = ('serviceWorker' in navigator) && ('PushManager' in window);
+            const pushActive = !!pushSubscription;
+
+            let pushSection = '';
+            if (pushSupported) {
+                if (pushActive) {
+                    pushSection = `
+                        <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-xl p-4 mb-4">
+                            <div class="flex items-start justify-between mb-1">
+                                <div>
+                                    <h4 class="text-sm font-bold text-emerald-300">🔔 Ειδοποιήσεις Ενεργές</h4>
+                                    <p class="text-[11px] text-emerald-400/80 mt-0.5">Θα λαμβάνετε ειδοποιήσεις για νέες ensembles, προβές & ανακοινώσεις.</p>
+                                </div>
+                                <span class="bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">ON</span>
+                            </div>
+                            <button onclick="disablePushNotifications()" class="mt-2 w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-red-300 py-2 rounded-lg text-xs font-semibold transition">Απενεργοποίηση Ειδοποιήσεων</button>
+                        </div>
+                    `;
+                } else {
+                    pushSection = `
+                        <div class="bg-slate-800/60 border border-slate-700 rounded-xl p-4 mb-4">
+                            <div class="flex items-start justify-between mb-1">
+                                <div>
+                                    <h4 class="text-sm font-bold text-indigo-300">🔔 Push Ειδοποιήσεις</h4>
+                                    <p class="text-[11px] text-slate-400 mt-0.5">Ενεργοποιήστε για να λαμβάνετε άμεσες ειδοποιήσεις για νέο πρόγραμμα, σπουδαίες ανακοινώσεις & αλλαγές.</p>
+                                </div>
+                            </div>
+                            <button onclick="enablePushNotifications()" class="mt-2 w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 rounded-lg text-xs font-semibold transition">✦ Ενεργοποίηση Ειδοποιήσεων</button>
+                        </div>
+                    `;
+                }
+            }
 
             content.innerHTML = `
                 <div class="flex items-center justify-between mb-4">
@@ -1036,6 +1241,7 @@
                         <span class="inline-block mt-1 uppercase text-xs bg-slate-900 px-2.5 py-1 rounded text-emerald-400 font-medium">${roleDisplay}</span>
                     </div>
                 </div>
+                ${pushSection}
                 <button onclick="handleLogout()" class="w-full bg-red-600/80 hover:bg-red-600 text-white font-semibold p-3 rounded-lg transition text-sm">Αποσύνδεση</button>
             `;
         }
