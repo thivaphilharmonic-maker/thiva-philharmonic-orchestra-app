@@ -96,6 +96,25 @@
 
         const LOGO_URL = 'https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png';
 
+        // =====================================================================
+        // 👇 PASTE YOUR VAPID PUBLIC KEY HERE (from generate_vapid_keys.js)
+        //    It should look something like:
+        //    'BLR4rZ8...about 87 chars...g7kM'
+        // =====================================================================
+        const VAPID_PUBLIC_KEY = 'PASTE_YOUR_VAPID_PUBLIC_KEY_HERE';
+
+        function urlB64ToUint8Array(base64String) {
+            if (!base64String || base64String === 'PASTE_YOUR_VAPID_PUBLIC_KEY_HERE') return null;
+            const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
         const manifestData = {
             "name": "Φιλαρμονική Ορχήστρα Θήβας",
             "short_name": "Φιλαρμονική",
@@ -853,7 +872,28 @@
             `;
             
             if (isAdmin) {
-                html += `<p class="text-xs text-slate-400 mb-4">Συγκεντρωτική κατάσταση συμμετοχών για όλους τους μουσικούς (Admin View).</p>`;
+                html += `<p class="text-xs text-slate-400 mb-2">Συγκεντρωτική κατάσταση συμμετοχών για όλους τους μουσικούς (Admin View).</p>`;
+
+                html += `
+                    <details class="mb-4 bg-slate-800 p-3 rounded-xl border border-slate-700">
+                        <summary class="cursor-pointer font-bold text-sm text-amber-300 select-none">📢 Αποστολή Push Ειδοποίησης (Admin)</summary>
+                        <div class="mt-3 space-y-2">
+                            <p class="text-[11px] text-slate-400">Στείλτε άμεση ειδοποίηση σε όλους τους μουσικούς που έχουν ενεργοποιήσει τα push notifications.</p>
+                            <input id="push-title" type="text" placeholder="Τίτλος (π.χ., Νέα Πρόβα)"
+                                class="w-full p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                            <textarea id="push-body" rows="2" placeholder="Μήνυμα (π.χ., Πρόβα Δευτέρα 19:00 στο Ωδείο)"
+                                class="w-full p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white"></textarea>
+                            <button onclick="sendAdminAnnouncement()"
+                                class="w-full bg-amber-600 hover:bg-amber-500 text-white py-2 rounded text-xs font-bold">📨 Προεπισκόπηση & Εκκίνηση Αποστολής</button>
+                            <div id="push-preview" class="hidden bg-slate-900 p-2 rounded border border-slate-700 text-xs space-y-1">
+                                <p class="text-slate-500">Προεπισκόπηση:</p>
+                                <p id="push-preview-title" class="text-white font-bold"></p>
+                                <p id="push-preview-body" class="text-slate-300 text-[11px]"></p>
+                                <p class="text-[10px] text-amber-400/80 mt-1">⚠️ Για την πραγματική αποστολή, τρέξτε το <b>push_notifications/send_push_notification.js</b> στον υπολογιστή σας. Αυτό το κουμπί δημιουργεί το αρχείο <b>announcement.json</b> με τα δεδομένα.</p>
+                            </div>
+                        </div>
+                    </details>
+                `;
 
                 if (!events || events.length === 0) {
                     html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν εκδηλώσεις.</div>`;
@@ -1146,6 +1186,13 @@
                 alert('Οι ειδοποιήσεις δεν υποστηρίζονται από αυτό το πρόγραμμα περιήγησης.');
                 return;
             }
+
+            const appKey = urlB64ToUint8Array(VAPID_PUBLIC_KEY);
+            if (!appKey) {
+                alert('Το δημόσιο κλειδί VAPID δεν έχει ρυθμιστεί ακόμα.\n\nΕκτελέστε πρώτα το push_notifications/generate_vapid_keys.js και επικολλήστε το δημόσιο κλειδί στη μεταβλητή VAPID_PUBLIC_KEY στο index.html (γραμμή ~104).');
+                return;
+            }
+
             try {
                 const reg = await navigator.serviceWorker.ready;
                 const permission = await Notification.requestPermission();
@@ -1153,24 +1200,111 @@
                     alert('Η άδεια ειδοποιήσεων δεν εγκρίθηκε.');
                     return;
                 }
-                alert('Επιτυχής ενεργοποίηση! Οι ειδοποιήσεις θα εμφανίζονται όταν υπάρχει νέο πρόγραμμα ή ανακοίνωση.\n\nΣημείωση: Ο διαχειριστής πρέπει να ρυθμίσει το VAPID δημόσιο/ιδιωτικό κλειδί στο backend για την αποστολή push notifications.');
-                await initPushSupport();
+
+                pushSubscription = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: appKey
+                });
+
+                const userEmail = currentProfile?.email || currentUser?.email;
+                const subJSON = pushSubscription.toJSON();
+                const { error: saveErr } = await supabaseClient
+                    .from('push_subscriptions')
+                    .upsert({
+                        user_email: userEmail,
+                        user_id: currentUser?.id || null,
+                        endpoint: subJSON.endpoint,
+                        p256dh_key: subJSON.keys?.p256dh || '',
+                        auth_secret: subJSON.keys?.auth  || '',
+                        user_agent: navigator.userAgent
+                    }, { onConflict: 'endpoint' });
+
+                if (saveErr) throw saveErr;
+
+                alert('✅ Επιτυχής ενεργοποίηση ειδοποιήσεων!\n\nΣημείωση: Για την αποστολή κοινοποιήσεων, ο διαχειριστής τρέχει το push_notifications/send_push_notification.js.');
                 renderProfileTab();
             } catch (e) {
+                console.error(e);
                 alert('Σφάλμα ενεργοποίησης ειδοποιήσεων: ' + e.message);
             }
         }
 
         async function disablePushNotifications() {
-            if (!pushSubscription) { renderProfileTab(); return; }
             try {
-                await pushSubscription.unsubscribe();
+                if (pushSubscription) {
+                    const subJSON = pushSubscription.toJSON();
+                    await pushSubscription.unsubscribe().catch(() => {});
+
+                    const { error: delErr } = await supabaseClient
+                        .from('push_subscriptions')
+                        .delete()
+                        .eq('endpoint', subJSON.endpoint);
+                    if (delErr) console.warn('DB delete warning:', delErr);
+                }
                 pushSubscription = null;
                 alert('Οι ειδοποιήσεις απενεργοποιήθηκαν.');
                 renderProfileTab();
             } catch (e) {
                 alert('Σφάλμα απενεργοποίησης: ' + e.message);
             }
+        }
+
+        async function sendAdminAnnouncement() {
+            const titleEl = document.getElementById('push-title');
+            const bodyEl  = document.getElementById('push-body');
+            const title = (titleEl.value || '').trim();
+            const body  = (bodyEl.value  || '').trim();
+
+            if (!title || !body) {
+                alert('Παρακαλώ συμπληρώστε τίτλο και μήνυμα.');
+                return;
+            }
+
+            document.getElementById('push-preview').classList.remove('hidden');
+            document.getElementById('push-preview-title').innerText = title;
+            document.getElementById('push-preview-body').innerText  = body;
+
+            const sentBy = currentProfile?.email || currentUser?.email;
+
+            const { data: subs } = await supabaseClient
+                .from('push_subscriptions')
+                .select('endpoint, p256dh_key, auth_secret, user_email');
+
+            const count = subs?.length || 0;
+
+            const payload = {
+                announcement: {
+                    title,
+                    body,
+                    url: './index.html#events',
+                    sent_by_email: sentBy,
+                    target_count: count,
+                    created_at: new Date().toISOString()
+                },
+                subscriptions: subs || []
+            };
+
+            downloadJSON(payload, 'announcement.json');
+
+            alert(`✅ Δημιουργήθηκε το αρχείο announcement.json!\n\n` +
+                  `Στόχοι: ${count} συνδρομητές\n\n` +
+                  `Επόμενο βήμα:\n` +
+                  `Ανοίξτε ένα τερματικό (terminal), πηγαίνετε στον φάκελο push_notifications\n` +
+                  `και εκτελέστε:\n` +
+                  `  node send_push_notification.js\n\n` +
+                  `(Το αρχείο announcement.json πρέπει να βρίσκεται στον ίδιο φάκελο.)`);
+        }
+
+        function downloadJSON(obj, filename) {
+            const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
 
         function renderProfileTab() {
