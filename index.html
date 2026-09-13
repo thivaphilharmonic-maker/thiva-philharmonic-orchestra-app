@@ -58,7 +58,7 @@
         #score-stage {
             position: relative;
             flex: 0 0 auto;
-            transform-origin: center center;
+            transform-origin: top center;
             transition: transform 80ms ease-out;
         }
         #score-stage.score-spring-back {
@@ -936,7 +936,7 @@
             drawCanvas = document.getElementById('draw-canvas');
             drawCtx = drawCanvas.getContext('2d');
             scoreStage = document.getElementById('score-stage');
-            scoreStage.style.transformOrigin = 'center center';
+            scoreStage.style.transformOrigin = 'top center';
 
             setupDrawingEvents();
             setupScoreGestures();
@@ -1007,7 +1007,7 @@
             scoreZoom = 1;
             panX = 0;
             panY = 0;
-            scoreStage.style.transformOrigin = 'center center';
+            scoreStage.style.transformOrigin = 'top center';
             applyScoreZoom();
         }
 
@@ -1032,18 +1032,15 @@
             if (!scoreStage) return;
             const wrapper = document.getElementById('canvas-wrapper');
             const maxX = Math.max(0, (scoreStage.offsetWidth * scoreZoom - wrapper.clientWidth) / 2);
-            const maxY = Math.max(0, (scoreStage.offsetHeight * scoreZoom - wrapper.clientHeight) / 2);
+            const maxY = Math.max(0, scoreStage.offsetHeight * scoreZoom - wrapper.clientHeight);
             panX = Math.min(maxX, Math.max(-maxX, panX));
-            const landscape = window.matchMedia('(orientation: landscape) and (max-height: 600px)').matches;
-            panY = landscape
-                ? Math.min(0, Math.max(-maxY * 2, panY))
-                : Math.min(maxY, Math.max(-maxY, panY));
+            panY = Math.min(0, Math.max(-maxY, panY));
         }
 
         function springScoreToFit() {
             if (!scoreStage || scoreZoom >= 1) return;
             scoreStage.classList.add('score-spring-back');
-            scoreStage.style.transformOrigin = 'center center';
+            scoreStage.style.transformOrigin = 'top center';
             scoreZoom = 1;
             panX = 0;
             panY = 0;
@@ -1069,8 +1066,7 @@
         }
 
         function toggleScoreZoom(x, y) {
-            const rect = scoreStage.getBoundingClientRect();
-            scoreStage.style.transformOrigin = `${((x - rect.left) / rect.width) * 100}% ${((y - rect.top) / rect.height) * 100}%`;
+            scoreStage.style.transformOrigin = 'top center';
             scoreZoom = scoreZoom > 1.01 ? 1 : 2;
             if (scoreZoom === 1) {
                 panX = 0;
@@ -1116,8 +1112,7 @@
                 pinchStartMidpoint = getTouchMidpoint(event.touches);
                 panStartX = panX;
                 panStartY = panY;
-                const rect = scoreStage.getBoundingClientRect();
-                scoreStage.style.transformOrigin = `${((pinchStartMidpoint.x - rect.left) / rect.width) * 100}% ${((pinchStartMidpoint.y - rect.top) / rect.height) * 100}%`;
+                scoreStage.style.transformOrigin = 'top center';
             };
             wrapper.ontouchmove = (event) => {
                 if (event.touches.length === 1 && currentTool === 'hand' && touchGestureActive) {
@@ -1196,7 +1191,7 @@
             const timestamp = new Date().toISOString();
 
             ctx.save();
-            const watermarkText = `Licensed exclusively to: ${userEmail} • Φιλαρμονική Ορχήστρα Θήβας`;
+            const watermarkText = `Licensed exclusively to: ${userEmail} • Φιλαρμονική Ορχήστρα Θήβας • Season ${getCurrentSeason()}`;
             const maxWidth = Math.max(80, width - 20);
             const baseFontSize = Math.min(10, Math.max(6, width / 55));
             ctx.font = `${baseFontSize}px monospace`;
@@ -1215,6 +1210,12 @@
             ctx.fillStyle = 'rgba(0,0,0,0)';
             ctx.fillText(fingerprintString, 5, 10);
             ctx.restore();
+        }
+
+        function getCurrentSeason(date = new Date()) {
+            const year = date.getFullYear();
+            const seasonStartYear = date.getMonth() >= 9 ? year : year - 1;
+            return `${seasonStartYear}-${String((seasonStartYear + 1) % 100).padStart(2, '0')}`;
         }
 
         function textToZeroWidth(text) {
@@ -1983,35 +1984,15 @@
             }
 
             const normalizedEmail = userEmail.trim().toLowerCase();
-            const { data: existing, error: fetchError } = await supabaseClient
+            const { error } = await supabaseClient
                 .from('event_responses')
-                .select('*')
-                .eq('event_id', eventId)
-                .eq('user_email', normalizedEmail)
-                .limit(1)
-                .maybeSingle();
-
-            if (fetchError) {
-                alert('Σφάλμα ελέγχου απάντησης: ' + fetchError.message);
-                return;
-            }
-
-            let error;
-            if (existing) {
-                const res = await supabaseClient
-                    .from('event_responses')
-                    .update({ status, excuse })
-                    .eq('id', existing.id);
-                error = res.error;
-            } else {
-                const res = await supabaseClient
-                    .from('event_responses')
-                    .insert([{ event_id: eventId, user_email: normalizedEmail, status, excuse }]);
-                error = res.error;
-            }
+                .upsert(
+                    [{ event_id: eventId, user_email: normalizedEmail, status, excuse }],
+                    { onConflict: 'event_id,user_email' }
+                );
 
             if (error) {
-                alert('Σφάλμα αποθήκευσης: ' + error.message);
+                alert(`Σφάλμα αποθήκευσης παρουσίας:\n${error.message}\n\nΚωδικός: ${error.code || '—'}`);
             } else {
                 await renderEventsTab();
             }
