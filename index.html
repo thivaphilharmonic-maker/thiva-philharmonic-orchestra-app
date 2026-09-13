@@ -785,6 +785,7 @@
             drawCanvas = document.getElementById('draw-canvas');
             drawCtx = drawCanvas.getContext('2d');
             scoreStage = document.getElementById('score-stage');
+            scoreStage.style.transformOrigin = 'center center';
 
             setupDrawingEvents();
             setupScoreGestures();
@@ -816,7 +817,7 @@
             const baseViewport = page.getViewport({ scale: 1 });
             const wrapper = document.getElementById('canvas-wrapper');
             const availableWidth = Math.max(280, wrapper.clientWidth - 24);
-            minimumScoreScale = Math.max(1, availableWidth / baseViewport.width);
+            minimumScoreScale = Math.max(0.5, availableWidth / baseViewport.width);
             scale = minimumScoreScale;
             const viewport = page.getViewport({ scale: scale });
             
@@ -832,6 +833,7 @@
             pageRendering = false;
             document.getElementById('page-num-display').innerText = `Σελίδα ${num} / ${pdfDoc.numPages}`;
             scoreZoom = 1;
+            scoreStage.style.transformOrigin = 'center center';
             applyScoreZoom();
         }
 
