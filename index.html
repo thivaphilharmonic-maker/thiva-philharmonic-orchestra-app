@@ -54,6 +54,8 @@
         #canvas-wrapper {
             touch-action: manipulation;
             overscroll-behavior: contain;
+            padding: 0;
+            align-items: flex-start;
         }
         #score-stage {
             position: relative;
@@ -177,10 +179,6 @@
             #navbar,
             #pdf-viewer-container {
                 max-width: none;
-            }
-            #canvas-wrapper {
-                align-items: flex-start;
-                padding: 0;
             }
             #score-stage {
                 transform-origin: top center;
@@ -1191,7 +1189,7 @@
             const timestamp = new Date().toISOString();
 
             ctx.save();
-            const watermarkText = `Licensed exclusively to: ${userEmail} • Φιλαρμονική Ορχήστρα Θήβας • Season ${getCurrentSeason()}`;
+            const watermarkText = `Licensed exclusively to: ${userEmail} • Φιλαρμονική Ορχήστρα Θήβας • ${getCurrentSeason()}`;
             const maxWidth = Math.max(80, width - 20);
             const baseFontSize = Math.min(10, Math.max(6, width / 55));
             ctx.font = `${baseFontSize}px monospace`;
@@ -1532,7 +1530,7 @@
                 return;
             }
 
-            const userEmail = currentUser?.email || currentProfile?.email;
+            const userEmail = (currentUser?.email || currentProfile?.email || '').trim().toLowerCase();
             const { data: responses, error: responsesError } = await supabaseClient.from('event_responses').select('*').eq('user_email', userEmail);
             if (responsesError) {
                 console.error('Αδυναμία φόρτωσης απαντήσεων εκδηλώσεων:', responsesError);
@@ -1723,21 +1721,18 @@
                     for (const ev of events) {
                         const { data: attendanceData, error: attError } = await supabaseClient
                             .from('event_responses')
-                            .select(`
-                                status,
-                                excuse,
-                                user_email,
-                                profiles (
-                                    first_name,
-                                    last_name,
-                                    instrument
-                                )
-                            `)
+                            .select('status, excuse, user_email')
                             .eq('event_id', ev.id);
 
+                        if (attError) {
+                            console.error(`Αδυναμία φόρτωσης παρουσιών για την εκδήλωση ${ev.id}:`, attError);
+                        }
                         const eventResponses = attendanceData || [];
                         const goingList = eventResponses.filter(r => String(r.status).toLowerCase() === 'going');
                         const notGoingList = eventResponses.filter(r => String(r.status).toLowerCase() === 'not going');
+                        if (attError) {
+                            html += `<div class="bg-red-900/40 border border-red-700/60 text-red-200 p-3 rounded-xl text-xs mb-3">Σφάλμα φόρτωσης παρουσιών: ${escapeHtml(attError.message || 'Άγνωστο σφάλμα')}</div>`;
+                        }
 
                         const formattedDate = formatGreekDateOnly(ev.date);
                         const dateTimeDisplay = ev.time ? `${formattedDate}, ${escapeHtml(ev.time)}` : `${formattedDate} (Ώρα αναμένεται)`;
@@ -1756,8 +1751,8 @@
                                         <span class="text-emerald-400 font-semibold block mb-1">✅ Θα πάνε (${goingList.length})</span>
                                         ${goingList.length === 0 ? '<span class="text-slate-500 italic">Καμία δήλωση</span>' : 
                                           goingList.map(r => {
-                                              const fullName = `${r.profiles?.first_name || ''} ${r.profiles?.last_name || ''}`.trim() || r.user_email;
-                                              const instrument = r.profiles?.instrument ? ` (${r.profiles.instrument})` : '';
+                                              const fullName = r.user_email;
+                                              const instrument = '';
                                               return `<div class="text-slate-300 truncate">• ${escapeHtml(fullName)}${escapeHtml(instrument)}</div>`;
                                           }).join('')}
                                     </div>
@@ -1765,8 +1760,8 @@
                                         <span class="text-red-400 font-semibold block mb-1">❌ Απόντες (${notGoingList.length})</span>
                                         ${notGoingList.length === 0 ? '<span class="text-slate-500 italic">Κανένας</span>' : 
                                           notGoingList.map(r => {
-                                              const fullName = `${r.profiles?.first_name || ''} ${r.profiles?.last_name || ''}`.trim() || r.user_email;
-                                              const instrument = r.profiles?.instrument ? ` (${r.profiles.instrument})` : '';
+                                              const fullName = r.user_email;
+                                              const instrument = '';
                                               return `<div class="text-slate-300 mb-1">• <b>${escapeHtml(fullName)}${escapeHtml(instrument)}</b><br><span class="text-[10px] text-slate-400 italic">"${escapeHtml(r.excuse || 'Χωρίς αιτιολογία')}"</span></div>`;
                                           }).join('')}
                                     </div>
