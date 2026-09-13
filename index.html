@@ -180,6 +180,10 @@
             }
             #canvas-wrapper {
                 align-items: flex-start;
+                padding: 0;
+            }
+            #score-stage {
+                transform-origin: top center;
             }
         }
     </style>
@@ -1030,7 +1034,10 @@
             const maxX = Math.max(0, (scoreStage.offsetWidth * scoreZoom - wrapper.clientWidth) / 2);
             const maxY = Math.max(0, (scoreStage.offsetHeight * scoreZoom - wrapper.clientHeight) / 2);
             panX = Math.min(maxX, Math.max(-maxX, panX));
-            panY = Math.min(maxY, Math.max(-maxY, panY));
+            const landscape = window.matchMedia('(orientation: landscape) and (max-height: 600px)').matches;
+            panY = landscape
+                ? Math.min(0, Math.max(-maxY * 2, panY))
+                : Math.min(maxY, Math.max(-maxY, panY));
         }
 
         function springScoreToFit() {
@@ -1485,7 +1492,7 @@
 
         function persistAnnotations() {
             savePageToMemory();
-            const userEmail = currentUser?.email || currentProfile?.email;
+            const userEmail = (currentUser?.email || currentProfile?.email || '').trim().toLowerCase();
             const storageKey = `annotations_${userEmail}_piece_${activePieceId}`;
             localStorage.setItem(storageKey, JSON.stringify(pageAnnotations));
             annotationsDirty = false;
@@ -1497,7 +1504,7 @@
         }
 
         function loadSavedAnnotations() {
-            const userEmail = currentUser?.email || currentProfile?.email;
+            const userEmail = (currentUser?.email || currentProfile?.email || '').trim().toLowerCase();
             const storageKey = `annotations_${userEmail}_piece_${activePieceId}`;
             const saved = localStorage.getItem(storageKey);
             if (saved) {
@@ -1969,17 +1976,18 @@
                 excuse = ''; 
             }
 
-            const userEmail = currentUser?.email || currentProfile?.email;
+            const userEmail = (currentUser?.email || currentProfile?.email || '').trim().toLowerCase();
             if (!userEmail) {
                 alert('Σφάλμα: Δεν βρέθηκε ενεργό email χρήστη.');
                 return;
             }
 
+            const normalizedEmail = userEmail.trim().toLowerCase();
             const { data: existing, error: fetchError } = await supabaseClient
                 .from('event_responses')
                 .select('*')
                 .eq('event_id', eventId)
-                .eq('user_email', userEmail)
+                .eq('user_email', normalizedEmail)
                 .limit(1)
                 .maybeSingle();
 
@@ -1998,7 +2006,7 @@
             } else {
                 const res = await supabaseClient
                     .from('event_responses')
-                    .insert([{ event_id: eventId, user_email: userEmail, status, excuse }]);
+                    .insert([{ event_id: eventId, user_email: normalizedEmail, status, excuse }]);
                 error = res.error;
             }
 
@@ -2052,7 +2060,7 @@
                     applicationServerKey: appKey
                 });
 
-                const userEmail = currentProfile?.email || currentUser?.email;
+                const userEmail = (currentUser?.email || currentProfile?.email || '').trim().toLowerCase();
                 const subJSON = pushSubscription.toJSON();
                 const { error: saveErr } = await supabaseClient
                     .from('push_subscriptions')
