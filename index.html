@@ -67,6 +67,16 @@
         .viewer-chrome {
             transition: opacity 180ms ease, transform 180ms ease;
         }
+        .page-indicator {
+            opacity: 0;
+            pointer-events: none;
+            background: rgba(51, 65, 85, 0.94);
+            border-color: rgba(148, 163, 184, 0.7);
+            transition: opacity 180ms ease;
+        }
+        .page-indicator.visible {
+            opacity: 1;
+        }
         #pdf-viewer-container.reader-mode .viewer-chrome {
             opacity: 0;
             pointer-events: none;
@@ -149,10 +159,6 @@
         .annotation-popover button.selected {
             border-color: white;
         }
-        .annotation-popover button[style*="#111827"] {
-            border-color: #94a3b8;
-            box-shadow: inset 0 0 0 2px #1e293b;
-        }
         .width-option {
             display: flex;
             align-items: center;
@@ -204,7 +210,7 @@
     <!-- PDF VIEWER & ANNOTATION MODAL CONTAINER -->
     <div id="pdf-viewer-container" class="hidden fixed inset-0 bg-slate-950/95 z-50 flex flex-col p-0 max-w-none">
         <button onclick="closePdfViewer()" aria-label="Κλείσιμο παρτιτούρας" class="viewer-chrome viewer-float top-3 left-3 text-slate-200 text-lg w-10 h-10 rounded-full">×</button>
-        <div class="viewer-chrome viewer-float top-3 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full">
+        <div id="page-indicator" class="viewer-chrome viewer-float page-indicator top-3 right-16 px-3 py-1.5 rounded-full">
             <span id="page-num-display" class="text-indigo-300 font-medium min-w-[56px] text-center text-xs">1 / 1</span>
         </div>
         <button id="viewer-show-controls" onclick="toggleViewerChrome()" aria-label="Απόκρυψη εργαλείων" class="viewer-float text-slate-200 text-lg"><svg aria-hidden="true" class="h-5 w-5 mx-auto" viewBox="0 0 256 256" fill="currentColor"><path d="M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z"></path></svg></button>
@@ -343,6 +349,7 @@
         let touchGestureActive = false;
         let pageSwipeStartX = null;
         let pageSwipeStartY = null;
+        let pageIndicatorTimer = null;
         let viewerResizeTimer = null;
         let annotationHistory = [];
         let annotationRedoHistory = [];
@@ -985,12 +992,22 @@
             pdfCtx.restore();
 
             pageRendering = false;
-            document.getElementById('page-num-display').innerText = `Σελίδα ${num} / ${pdfDoc.numPages}`;
+            showPageIndicator(num);
             scoreZoom = 1;
             panX = 0;
             panY = 0;
             scoreStage.style.transformOrigin = 'center center';
             applyScoreZoom();
+        }
+
+        function showPageIndicator(num) {
+            const indicator = document.getElementById('page-indicator');
+            const display = document.getElementById('page-num-display');
+            if (!indicator || !display || !pdfDoc) return;
+            display.innerText = `${num} / ${pdfDoc.numPages}`;
+            indicator.classList.add('visible');
+            clearTimeout(pageIndicatorTimer);
+            pageIndicatorTimer = setTimeout(() => indicator.classList.remove('visible'), 1800);
         }
 
         function applyScoreZoom() {
@@ -1003,8 +1020,8 @@
         function clampPan() {
             if (!scoreStage) return;
             const wrapper = document.getElementById('canvas-wrapper');
-            const maxX = Math.max(0, (scoreStage.offsetWidth * scoreZoom - wrapper.clientWidth) / 2 + 12);
-            const maxY = Math.max(0, (scoreStage.offsetHeight * scoreZoom - wrapper.clientHeight) / 2 + 12);
+            const maxX = Math.max(0, (scoreStage.offsetWidth * scoreZoom - wrapper.clientWidth) / 2);
+            const maxY = Math.max(0, (scoreStage.offsetHeight * scoreZoom - wrapper.clientHeight) / 2);
             panX = Math.min(maxX, Math.max(-maxX, panX));
             panY = Math.min(maxY, Math.max(-maxY, panY));
         }
@@ -1355,7 +1372,7 @@
                 drawCtx.lineWidth = getToolLineWidth();
                 drawCtx.lineCap = 'round';
                 drawCtx.globalCompositeOperation = 'source-over';
-                drawCtx.globalAlpha = 0.35;
+                drawCtx.globalAlpha = 0.22;
             } else {
                 drawCtx.lineWidth = getToolLineWidth();
                 drawCtx.globalCompositeOperation = 'destination-out';
@@ -1404,7 +1421,7 @@
                     : [[12, 'Μικρή'], [20, 'Μεσαία'], [32, 'Μεγάλη']];
             options.innerHTML = `
                 ${colors.map(([color, label]) => `<button aria-label="${label}" title="${label}" class="${setting.color === color ? 'selected' : ''}" style="background:${color}" onclick="setAnnotationColor('${color}')"></button>`).join('')}
-                ${widths.map(([width, label]) => `<button aria-label="${label}" title="${label}" class="width-option ${setting.width === width ? 'selected' : ''}" onclick="setAnnotationWidth(${width})"><span style="height:${Math.max(3, Math.min(14, width / 2))}px"></span></button>`).join('')}
+                ${widths.map(([width, label]) => `<button aria-label="${label}" title="${label}" class="width-option ${setting.width === width ? 'selected' : ''}" onclick="setAnnotationWidth(${width})"><span style="height:${getWidthPreviewHeight(width)}px"></span></button>`).join('')}
             `;
             options.classList.add('open');
         }
@@ -1417,6 +1434,11 @@
         function setAnnotationWidth(width) {
             annotationSettings[currentTool].width = width;
             document.getElementById('annotation-options').classList.remove('open');
+        }
+
+        function getWidthPreviewHeight(width) {
+            const factor = currentTool === 'pen' ? 2 : currentTool === 'highlighter' ? 0.55 : 0.4;
+            return Math.max(4, Math.min(16, width * factor));
         }
 
         function clearCanvas() {
