@@ -53,7 +53,7 @@
             position: relative;
             flex: 0 0 auto;
             transform-origin: center center;
-            transition: transform 120ms ease-out;
+            transition: transform 80ms ease-out;
         }
         .viewer-chrome {
             transition: opacity 180ms ease, transform 180ms ease;
@@ -227,6 +227,10 @@
         let pinchStartDistance = null;
         let pinchStartZoom = null;
         let pinchStartMidpoint = null;
+        let panX = 0;
+        let panY = 0;
+        let panStartX = 0;
+        let panStartY = 0;
         let scoreStage = null;
         let lastScoreTapAt = 0;
         let lastScoreTapX = 0;
@@ -817,6 +821,8 @@
             pinchStartDistance = null;
             pinchStartZoom = null;
             pinchStartMidpoint = null;
+            panX = 0;
+            panY = 0;
             lastScoreTapAt = 0;
         }
 
@@ -854,13 +860,15 @@
             pageRendering = false;
             document.getElementById('page-num-display').innerText = `Σελίδα ${num} / ${pdfDoc.numPages}`;
             scoreZoom = 1;
+            panX = 0;
+            panY = 0;
             scoreStage.style.transformOrigin = 'center center';
             applyScoreZoom();
         }
 
         function applyScoreZoom() {
             if (scoreStage) {
-                scoreStage.style.transform = `scale(${scoreZoom})`;
+                scoreStage.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scoreZoom})`;
             }
         }
 
@@ -872,6 +880,10 @@
             const rect = scoreStage.getBoundingClientRect();
             scoreStage.style.transformOrigin = `${((x - rect.left) / rect.width) * 100}% ${((y - rect.top) / rect.height) * 100}%`;
             scoreZoom = scoreZoom > 1.01 ? 1 : 2;
+            if (scoreZoom === 1) {
+                panX = 0;
+                panY = 0;
+            }
             applyScoreZoom();
         }
 
@@ -897,6 +909,8 @@
                 pinchStartDistance = getTouchDistance(event.touches);
                 pinchStartZoom = scoreZoom;
                 pinchStartMidpoint = getTouchMidpoint(event.touches);
+                panStartX = panX;
+                panStartY = panY;
                 const rect = scoreStage.getBoundingClientRect();
                 scoreStage.style.transformOrigin = `${((pinchStartMidpoint.x - rect.left) / rect.width) * 100}% ${((pinchStartMidpoint.y - rect.top) / rect.height) * 100}%`;
             };
@@ -904,7 +918,10 @@
                 if (event.touches.length !== 2 || !pinchStartDistance || !pinchStartZoom) return;
                 event.preventDefault();
                 const nextZoom = Math.min(3, Math.max(1, pinchStartZoom * getTouchDistance(event.touches) / pinchStartDistance));
-                if (Math.abs(nextZoom - scoreZoom) < 0.01) return;
+                const midpoint = getTouchMidpoint(event.touches);
+                panX = panStartX + midpoint.x - pinchStartMidpoint.x;
+                panY = panStartY + midpoint.y - pinchStartMidpoint.y;
+                if (Math.abs(nextZoom - scoreZoom) < 0.01 && panX === panStartX && panY === panStartY) return;
                 scoreZoom = nextZoom;
                 applyScoreZoom();
             };
@@ -914,6 +931,8 @@
                     pinchStartDistance = null;
                     pinchStartZoom = null;
                     pinchStartMidpoint = null;
+                    panStartX = panX;
+                    panStartY = panY;
                     return;
                 }
 
@@ -946,11 +965,17 @@
             const timestamp = new Date().toISOString();
 
             ctx.save();
-            ctx.font = '10px monospace';
+            const watermarkText = `Licensed exclusively to: ${userEmail} • Φιλαρμονική Ορχήστρα Θήβας`;
+            const maxWidth = Math.max(80, width - 20);
+            const baseFontSize = Math.min(10, Math.max(6, width / 55));
+            ctx.font = `${baseFontSize}px monospace`;
+            const measuredWidth = ctx.measureText(watermarkText).width;
+            if (measuredWidth > maxWidth) {
+                ctx.font = `${Math.max(6, baseFontSize * maxWidth / measuredWidth)}px monospace`;
+            }
             ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
             ctx.textAlign = 'center';
-            const watermarkText = `Licensed exclusively to: ${userEmail} • Φιλαρμονική Ορχήστρα Θήβας`;
-            ctx.fillText(watermarkText, width / 2, height - 12);
+            ctx.fillText(watermarkText, width / 2, height - Math.max(8, baseFontSize + 3));
             ctx.restore();
 
             const fingerprintString = textToZeroWidth(`UID:${userEmail}|TS:${timestamp}`);
@@ -1008,6 +1033,7 @@
 
             drawCanvas.ontouchstart = (e) => {
                 e.preventDefault();
+                if (e.touches.length !== 1) return;
                 touchWasDrawing = false;
                 if (e.touches[0]) {
                     touchDrawStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
