@@ -49,11 +49,22 @@
         #canvas-wrapper {
             touch-action: manipulation;
         }
-        #pdf-canvas, #draw-canvas {
-            max-width: 100%;
+        #score-stage {
+            position: relative;
+            flex: 0 0 auto;
+            transform-origin: center center;
+            transition: transform 120ms ease-out;
         }
-        #pdf-canvas.score-zoomed, #draw-canvas.score-zoomed {
-            max-width: none;
+        .viewer-chrome {
+            transition: opacity 180ms ease, transform 180ms ease;
+        }
+        #pdf-viewer-container.reader-mode .viewer-chrome {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(8px);
+        }
+        #pdf-viewer-container.reader-mode #viewer-show-controls {
+            display: block;
         }
         @media (orientation: landscape) and (max-height: 600px) {
             #app,
@@ -89,7 +100,7 @@
 
     <!-- PDF VIEWER & ANNOTATION MODAL CONTAINER -->
     <div id="pdf-viewer-container" class="hidden fixed inset-0 bg-slate-950/95 z-50 flex flex-col p-3 max-w-md mx-auto">
-        <div class="flex justify-between items-center bg-slate-900/95 p-2.5 rounded-xl border border-slate-800 mb-2 shadow-lg">
+        <div class="viewer-chrome flex justify-between items-center bg-slate-900/95 p-2.5 rounded-xl border border-slate-800 mb-2 shadow-lg">
             <button onclick="closePdfViewer()" class="text-slate-300 hover:text-white text-xs font-semibold px-2 py-1.5 rounded-lg hover:bg-slate-800">✕ Κλείσιμο</button>
             <div class="flex items-center gap-2 text-xs">
                 <button onclick="changePage(-1)" aria-label="Προηγούμενη σελίδα" class="bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg text-white">◀</button>
@@ -100,22 +111,20 @@
         </div>
 
         <div id="canvas-wrapper" class="relative flex-1 overflow-auto bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-center p-2">
-            <canvas id="pdf-canvas" class="shadow-lg max-w-full"></canvas>
-            <canvas id="draw-canvas" class="absolute cursor-crosshair touch-none"></canvas>
+            <div id="score-stage">
+                <canvas id="pdf-canvas" class="shadow-lg"></canvas>
+                <canvas id="draw-canvas" class="absolute inset-0 cursor-crosshair touch-none"></canvas>
+            </div>
         </div>
 
-        <div class="flex justify-between items-center bg-slate-900/95 p-2.5 rounded-xl border border-slate-800 mt-2 text-xs shadow-lg">
+        <div class="viewer-chrome flex justify-between items-center bg-slate-900/95 p-2.5 rounded-xl border border-slate-800 mt-2 text-xs shadow-lg">
             <div class="flex items-center gap-1">
                 <button onclick="setTool('pen')" id="tool-pen" class="bg-indigo-600 px-3 py-1.5 rounded text-white font-semibold">Πένα</button>
                 <button onclick="setTool('eraser')" id="tool-eraser" class="bg-slate-800 px-3 py-1.5 rounded text-slate-300">Γόμα</button>
             </div>
-            <div class="flex items-center gap-1.5">
-                <button onclick="changeZoom(-0.2)" aria-label="Σμίκρυνση" class="bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg text-white text-base leading-none">−</button>
-                <span id="zoom-display" class="text-slate-300 min-w-[42px] text-center">130%</span>
-                <button onclick="changeZoom(0.2)" aria-label="Μεγέθυνση" class="bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg text-white text-base leading-none">+</button>
-                <button onclick="saveAnnotations()" class="bg-emerald-600 hover:bg-emerald-500 px-3.5 py-1.5 rounded-lg text-white font-semibold">Αποθήκευση</button>
-            </div>
+            <button onclick="saveAnnotations()" class="bg-emerald-600 hover:bg-emerald-500 px-3.5 py-1.5 rounded-lg text-white font-semibold">Αποθήκευση</button>
         </div>
+        <button id="viewer-show-controls" onclick="toggleViewerChrome()" aria-label="Εμφάνιση εργαλείων" class="hidden absolute top-3 right-3 bg-slate-800/90 text-white text-xs px-3 py-2 rounded-lg shadow-lg">Εργαλεία</button>
     </div>
 
     <!-- JAVASCRIPT APP LOGIC -->
@@ -202,13 +211,23 @@
         let pageRendering = false;
         let pageNumPending = null;
         let scale = 1.3;
+        let scoreZoom = 1;
+        let minimumScoreScale = 1;
         let pdfCanvas = null;
         let pdfCtx = null;
         let drawCanvas = null;
         let drawCtx = null;
         let isDrawing = false;
         let pinchStartDistance = null;
-        let pinchStartScale = null;
+        let pinchStartZoom = null;
+        let scoreStage = null;
+        let lastScoreTapAt = 0;
+        let lastScoreTapX = 0;
+        let lastScoreTapY = 0;
+        let scoreTapTimer = null;
+        let touchDrawStart = null;
+        let touchDrawMoved = false;
+        let touchWasDrawing = false;
         let currentTool = 'pen';
         let activePieceId = null;
 
@@ -759,11 +778,13 @@
             activePieceId = pieceId;
             pageNum = 1;
             document.getElementById('pdf-viewer-container').classList.remove('hidden');
+            document.getElementById('pdf-viewer-container').classList.remove('reader-mode');
             
             pdfCanvas = document.getElementById('pdf-canvas');
             pdfCtx = pdfCanvas.getContext('2d');
             drawCanvas = document.getElementById('draw-canvas');
             drawCtx = drawCanvas.getContext('2d');
+            scoreStage = document.getElementById('score-stage');
 
             setupDrawingEvents();
             setupScoreGestures();
@@ -785,12 +806,18 @@
             pageNum = 1;
             activePieceId = null;
             pinchStartDistance = null;
-            pinchStartScale = null;
+            pinchStartZoom = null;
+            lastScoreTapAt = 0;
         }
 
         async function renderPage(num) {
             pageRendering = true;
             const page = await pdfDoc.getPage(num);
+            const baseViewport = page.getViewport({ scale: 1 });
+            const wrapper = document.getElementById('canvas-wrapper');
+            const availableWidth = Math.max(280, wrapper.clientWidth - 24);
+            minimumScoreScale = Math.max(1, availableWidth / baseViewport.width);
+            scale = minimumScoreScale;
             const viewport = page.getViewport({ scale: scale });
             
             pdfCanvas.height = viewport.height;
@@ -804,17 +831,24 @@
 
             pageRendering = false;
             document.getElementById('page-num-display').innerText = `Σελίδα ${num} / ${pdfDoc.numPages}`;
-            document.getElementById('zoom-display').innerText = `${Math.round(scale * 100)}%`;
-            pdfCanvas.classList.toggle('score-zoomed', scale > 1.3);
-            drawCanvas.classList.toggle('score-zoomed', scale > 1.3);
+            scoreZoom = 1;
+            applyScoreZoom();
         }
 
-        async function changeZoom(amount) {
-            if (!pdfDoc || pageRendering) return;
-            savePageToMemory();
-            scale = Math.min(3, Math.max(0.8, scale + amount));
-            await renderPage(pageNum);
-            restorePageFromMemory();
+        function applyScoreZoom() {
+            if (scoreStage) {
+                scoreStage.style.transform = `scale(${scoreZoom})`;
+            }
+        }
+
+        function toggleViewerChrome() {
+            document.getElementById('pdf-viewer-container').classList.toggle('reader-mode');
+        }
+
+        function toggleScoreZoom(x, y) {
+            scoreStage.style.transformOrigin = `${x}px ${y}px`;
+            scoreZoom = scoreZoom > 1.01 ? 1 : 2;
+            applyScoreZoom();
         }
 
         function getTouchDistance(touches) {
@@ -830,23 +864,49 @@
                 event.preventDefault();
                 isDrawing = false;
                 pinchStartDistance = getTouchDistance(event.touches);
-                pinchStartScale = scale;
+                pinchStartZoom = scoreZoom;
             };
             wrapper.ontouchmove = (event) => {
-                if (event.touches.length !== 2 || !pinchStartDistance || !pinchStartScale) return;
+                if (event.touches.length !== 2 || !pinchStartDistance || !pinchStartZoom) return;
                 event.preventDefault();
-                const nextScale = Math.min(3, Math.max(0.8, pinchStartScale * getTouchDistance(event.touches) / pinchStartDistance));
-                if (Math.abs(nextScale - scale) < 0.03 || pageRendering) return;
-                savePageToMemory();
-                scale = nextScale;
-                renderPage(pageNum).then(restorePageFromMemory);
+                const nextZoom = Math.min(3, Math.max(1, pinchStartZoom * getTouchDistance(event.touches) / pinchStartDistance));
+                if (Math.abs(nextZoom - scoreZoom) < 0.01) return;
+                scoreZoom = nextZoom;
+                applyScoreZoom();
             };
-            wrapper.ontouchend = () => {
+            wrapper.ontouchend = (event) => {
                 if (pinchStartDistance) {
+                    if (event.touches.length > 0) return;
                     pinchStartDistance = null;
-                    pinchStartScale = null;
+                    pinchStartZoom = null;
+                    return;
+                }
+
+                if (!touchWasDrawing && eventChangedTouchesAreScoreTap(event)) {
+                    const touch = event.changedTouches[0];
+                    const now = Date.now();
+                    const rect = scoreStage.getBoundingClientRect();
+                    const x = touch.clientX - rect.left;
+                    const y = touch.clientY - rect.top;
+                    const isDoubleTap = now - lastScoreTapAt < 300 &&
+                        Math.hypot(touch.clientX - lastScoreTapX, touch.clientY - lastScoreTapY) < 30;
+                    if (isDoubleTap) {
+                        lastScoreTapAt = 0;
+                        clearTimeout(scoreTapTimer);
+                        toggleScoreZoom(x, y);
+                    } else {
+                        lastScoreTapAt = now;
+                        lastScoreTapX = touch.clientX;
+                        lastScoreTapY = touch.clientY;
+                        clearTimeout(scoreTapTimer);
+                        scoreTapTimer = setTimeout(toggleViewerChrome, 300);
+                    }
                 }
             };
+        }
+
+        function eventChangedTouchesAreScoreTap(event) {
+            return event.changedTouches?.length === 1 && scoreStage && scoreStage.contains(event.target);
         }
 
         function applyWatermarks(ctx, width, height) {
@@ -914,9 +974,35 @@
             drawCanvas.onmouseup = stopDraw;
             drawCanvas.onmouseleave = stopDraw;
 
-            drawCanvas.ontouchstart = (e) => { e.preventDefault(); if(e.touches[0]) startDraw(e.touches[0]); };
-            drawCanvas.ontouchmove = (e) => { e.preventDefault(); if(e.touches[0]) draw(e.touches[0]); };
-            drawCanvas.ontouchend = (e) => { e.preventDefault(); stopDraw(); };
+            drawCanvas.ontouchstart = (e) => {
+                e.preventDefault();
+                touchWasDrawing = false;
+                if (e.touches[0]) {
+                    touchDrawStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                    touchDrawMoved = false;
+                }
+            };
+            drawCanvas.ontouchmove = (e) => {
+                e.preventDefault();
+                if (!e.touches[0] || !touchDrawStart) return;
+                const distance = Math.hypot(
+                    e.touches[0].clientX - touchDrawStart.x,
+                    e.touches[0].clientY - touchDrawStart.y
+                );
+                if (!touchDrawMoved && distance > 6) {
+                    touchDrawMoved = true;
+                    touchWasDrawing = true;
+                    startDraw(e.touches[0]);
+                }
+                if (touchDrawMoved) draw(e.touches[0]);
+            };
+            drawCanvas.ontouchend = (e) => {
+                e.preventDefault();
+                if (touchDrawMoved) stopDraw();
+                touchDrawStart = null;
+                touchDrawMoved = false;
+                setTimeout(() => { touchWasDrawing = false; }, 0);
+            };
         }
 
         function getCanvasScaleRatio() {
