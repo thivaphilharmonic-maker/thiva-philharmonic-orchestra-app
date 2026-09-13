@@ -131,6 +131,19 @@
         .annotation-popover button.selected {
             border-color: white;
         }
+        .width-option {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent !important;
+            transform: none !important;
+        }
+        .width-option span {
+            display: block;
+            width: 22px;
+            border-radius: 999px;
+            background: #cbd5e1;
+        }
         @media (orientation: landscape) and (max-height: 600px) {
             #app,
             #navbar,
@@ -183,7 +196,7 @@
         <div class="viewer-chrome annotation-island">
             <button onclick="setTool('hand')" id="tool-hand" aria-label="Χέρι" class="bg-indigo-600 text-white text-lg">✋</button>
             <button onclick="setTool('pen')" id="tool-pen" aria-label="Πένα" class="bg-slate-800 text-slate-300 text-lg">✎</button>
-            <button onclick="setTool('highlighter')" id="tool-highlighter" aria-label="Μαρκαδόρος" class="bg-slate-800 text-slate-300 text-lg">▰</button>
+            <button onclick="setTool('highlighter')" id="tool-highlighter" aria-label="Μαρκαδόρος" class="bg-slate-800 text-slate-300 text-lg"><svg aria-hidden="true" class="h-5 w-5 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m14 4 6 6"></path><path d="m12 6 6 6-7.5 7.5H4v-6L11.5 6H12Z"></path><path d="M4 20h16"></path></svg></button>
             <button onclick="setTool('eraser')" id="tool-eraser" aria-label="Γόμα" class="bg-slate-800 text-slate-300 text-lg">⌫</button>
             <button onclick="clearCanvas()" aria-label="Καθαρισμός σημειώσεων" class="bg-slate-800 text-red-300 text-lg">🗑</button>
             <button onclick="saveAnnotations()" aria-label="Αποθήκευση σημειώσεων" class="bg-emerald-600 text-white text-lg">✓</button>
@@ -293,6 +306,7 @@
         let handStartY = 0;
         let handStartPanX = 0;
         let handStartPanY = 0;
+        let handMoved = false;
         let scoreStage = null;
         let lastScoreTapAt = 0;
         let lastScoreTapX = 0;
@@ -949,8 +963,18 @@
 
         function applyScoreZoom() {
             if (scoreStage) {
+                clampPan();
                 scoreStage.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${scoreZoom})`;
             }
+        }
+
+        function clampPan() {
+            if (!scoreStage) return;
+            const wrapper = document.getElementById('canvas-wrapper');
+            const maxX = Math.max(0, (scoreStage.offsetWidth * scoreZoom - wrapper.clientWidth) / 2 + 12);
+            const maxY = Math.max(0, (scoreStage.offsetHeight * scoreZoom - wrapper.clientHeight) / 2 + 12);
+            panX = Math.min(maxX, Math.max(-maxX, panX));
+            panY = Math.min(maxY, Math.max(-maxY, panY));
         }
 
         function springScoreToFit() {
@@ -1003,6 +1027,7 @@
                     handStartY = touch.clientY;
                     handStartPanX = panX;
                     handStartPanY = panY;
+                    handMoved = false;
                     touchGestureActive = true;
                     return;
                 }
@@ -1023,6 +1048,7 @@
                     event.preventDefault();
                     panX = handStartPanX + event.touches[0].clientX - handStartX;
                     panY = handStartPanY + event.touches[0].clientY - handStartY;
+                    handMoved = Math.hypot(event.touches[0].clientX - handStartX, event.touches[0].clientY - handStartY) > 6;
                     applyScoreZoom();
                     return;
                 }
@@ -1037,9 +1063,8 @@
                 applyScoreZoom();
             };
             wrapper.ontouchend = (event) => {
-                if (currentTool === 'hand' && event.touches.length === 0 && touchGestureActive && !pinchStartDistance) {
+                if (currentTool === 'hand' && event.touches.length === 0 && touchGestureActive && !pinchStartDistance && !handMoved) {
                     touchGestureActive = false;
-                    return;
                 }
                 if (pinchStartDistance) {
                     if (event.touches.length > 0) return;
@@ -1069,6 +1094,8 @@
                         clearTimeout(scoreTapTimer);
                         scoreTapTimer = setTimeout(toggleViewerChrome, 300);
                     }
+                } else if (currentTool === 'hand' && event.touches.length === 0 && !handMoved && eventChangedTouchesAreScoreTap(event)) {
+                    toggleViewerChrome();
                 }
             };
         }
@@ -1294,7 +1321,7 @@
                     : [[12, 'Μικρή'], [20, 'Μεσαία'], [32, 'Μεγάλη']];
             options.innerHTML = `
                 ${colors.map(([color, label]) => `<button aria-label="${label}" title="${label}" class="${setting.color === color ? 'selected' : ''}" style="background:${color}" onclick="setAnnotationColor('${color}')"></button>`).join('')}
-                ${widths.map(([width, label]) => `<button aria-label="${label}" title="${label}" class="${setting.width === width ? 'selected' : ''}" style="background:linear-gradient(transparent 42%, #cbd5e1 42%, #cbd5e1 58%, transparent 58%); transform:scale(${Math.min(1.25, width / 20)})" onclick="setAnnotationWidth(${width})"></button>`).join('')}
+                ${widths.map(([width, label]) => `<button aria-label="${label}" title="${label}" class="width-option ${setting.width === width ? 'selected' : ''}" onclick="setAnnotationWidth(${width})"><span style="height:${Math.max(3, Math.min(14, width / 2))}px"></span></button>`).join('')}
             `;
             options.classList.add('open');
         }
