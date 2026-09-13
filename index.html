@@ -210,7 +210,7 @@
     <!-- PDF VIEWER & ANNOTATION MODAL CONTAINER -->
     <div id="pdf-viewer-container" class="hidden fixed inset-0 bg-slate-950/95 z-50 flex flex-col p-0 max-w-none">
         <button onclick="closePdfViewer()" aria-label="Κλείσιμο παρτιτούρας" class="viewer-chrome viewer-float top-3 left-3 text-slate-200 text-lg w-10 h-10 rounded-full">×</button>
-        <div id="page-indicator" class="viewer-chrome viewer-float page-indicator top-3 right-16 px-3 py-1.5 rounded-full">
+        <div id="page-indicator" class="viewer-chrome viewer-float page-indicator top-3 right-3 px-3 py-1.5 rounded-full">
             <span id="page-num-display" class="text-indigo-300 font-medium min-w-[56px] text-center text-xs">1 / 1</span>
         </div>
         <button id="viewer-show-controls" onclick="toggleViewerChrome()" aria-label="Απόκρυψη εργαλείων" class="viewer-float text-slate-200 text-lg"><svg aria-hidden="true" class="h-5 w-5 mx-auto" viewBox="0 0 256 256" fill="currentColor"><path d="M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z"></path></svg></button>
@@ -353,6 +353,7 @@
         let viewerResizeTimer = null;
         let annotationHistory = [];
         let annotationRedoHistory = [];
+        let annotationsDirty = false;
         let currentTool = 'hand';
         const annotationSettings = {
             pen: { color: '#111827', width: 3.5 },
@@ -921,6 +922,7 @@
             Object.keys(pageAnnotations).forEach(page => delete pageAnnotations[page]);
             annotationHistory = [];
             annotationRedoHistory = [];
+            annotationsDirty = false;
             document.getElementById('pdf-viewer-container').classList.remove('hidden');
             document.getElementById('pdf-viewer-container').classList.remove('reader-mode');
             updateViewerToggleIcon(false);
@@ -948,6 +950,10 @@
         }
 
         function closePdfViewer() {
+            if (annotationsDirty) {
+                const shouldSave = confirm('Έχετε μη αποθηκευμένες σημειώσεις. Θέλετε να τις αποθηκεύσετε πριν κλείσετε την παρτιτούρα;');
+                if (shouldSave) persistAnnotations();
+            }
             document.getElementById('pdf-viewer-container').classList.add('hidden');
             pdfDoc = null;
             pageNum = 1;
@@ -958,6 +964,7 @@
             panX = 0;
             panY = 0;
             lastScoreTapAt = 0;
+            annotationsDirty = false;
         }
 
         async function renderPage(num) {
@@ -1351,6 +1358,7 @@
             annotationHistory.push(drawCanvas.toDataURL());
             if (annotationHistory.length > 30) annotationHistory.shift();
             annotationRedoHistory = [];
+            annotationsDirty = true;
             isDrawing = true;
             drawCtx.beginPath();
             const { x, y } = getCanvasCoords(e);
@@ -1371,7 +1379,7 @@
                 drawCtx.strokeStyle = annotationSettings.highlighter.color;
                 drawCtx.lineWidth = getToolLineWidth();
                 drawCtx.lineCap = 'round';
-                drawCtx.globalCompositeOperation = 'source-over';
+                drawCtx.globalCompositeOperation = 'destination-over';
                 drawCtx.globalAlpha = 0.22;
             } else {
                 drawCtx.lineWidth = getToolLineWidth();
@@ -1446,6 +1454,7 @@
             annotationRedoHistory = [];
             clearDrawingCanvas();
             delete pageAnnotations[pageNum];
+            annotationsDirty = true;
         }
 
         function clearDrawingCanvas() {
@@ -1464,24 +1473,31 @@
             if (!drawCanvas || annotationHistory.length === 0) return;
             annotationRedoHistory.push(drawCanvas.toDataURL());
             restoreAnnotationSnapshot(annotationHistory.pop());
+            annotationsDirty = true;
         }
 
         function redoAnnotation() {
             if (!drawCanvas || annotationRedoHistory.length === 0) return;
             annotationHistory.push(drawCanvas.toDataURL());
             restoreAnnotationSnapshot(annotationRedoHistory.pop());
+            annotationsDirty = true;
+        }
+
+        function persistAnnotations() {
+            savePageToMemory();
+            const userEmail = currentUser?.email || currentProfile?.email;
+            const storageKey = `annotations_${userEmail}_piece_${activePieceId}`;
+            localStorage.setItem(storageKey, JSON.stringify(pageAnnotations));
+            annotationsDirty = false;
         }
 
         function saveAnnotations() {
-            savePageToMemory();
-            const userEmail = currentProfile?.email || currentUser?.email;
-            const storageKey = `annotations_${userEmail}_piece_${activePieceId}`;
-            localStorage.setItem(storageKey, JSON.stringify(pageAnnotations));
+            persistAnnotations();
             alert('Οι σημειώσεις αποθηκεύτηκαν επιτυχώς στη συσκευή σας!');
         }
 
         function loadSavedAnnotations() {
-            const userEmail = currentProfile?.email || currentUser?.email;
+            const userEmail = currentUser?.email || currentProfile?.email;
             const storageKey = `annotations_${userEmail}_piece_${activePieceId}`;
             const saved = localStorage.getItem(storageKey);
             if (saved) {
@@ -1489,6 +1505,7 @@
                     const parsed = JSON.parse(saved);
                     Object.keys(parsed).forEach(p => { pageAnnotations[p] = parsed[p]; });
                     restorePageFromMemory();
+                    annotationsDirty = false;
                 } catch (e) {
                     console.error(e);
                 }
@@ -1507,8 +1524,11 @@
                 return;
             }
 
-            const userEmail = currentProfile?.email || currentUser?.email;
-            const { data: responses } = await supabaseClient.from('event_responses').select('*').eq('user_email', userEmail);
+            const userEmail = currentUser?.email || currentProfile?.email;
+            const { data: responses, error: responsesError } = await supabaseClient.from('event_responses').select('*').eq('user_email', userEmail);
+            if (responsesError) {
+                console.error('Αδυναμία φόρτωσης απαντήσεων εκδηλώσεων:', responsesError);
+            }
 
             let html = `
                 <div class="flex justify-between items-center mb-4">
@@ -1708,8 +1728,8 @@
                             .eq('event_id', ev.id);
 
                         const eventResponses = attendanceData || [];
-                        const goingList = eventResponses.filter(r => r.status === 'Going');
-                        const notGoingList = eventResponses.filter(r => r.status === 'Not Going');
+                        const goingList = eventResponses.filter(r => String(r.status).toLowerCase() === 'going');
+                        const notGoingList = eventResponses.filter(r => String(r.status).toLowerCase() === 'not going');
 
                         const formattedDate = formatGreekDateOnly(ev.date);
                         const dateTimeDisplay = ev.time ? `${formattedDate}, ${escapeHtml(ev.time)}` : `${formattedDate} (Ώρα αναμένεται)`;
@@ -1751,12 +1771,15 @@
             } else {
                 html += `<p class="text-xs text-slate-400 mb-4">Το προσωπικό σας ιστορικό συμμετοχών και αιτιολογιών απουσίας.</p>`;
 
-                const userEmail = currentProfile?.email || currentUser?.email;
-                const { data: myResponses } = await supabaseClient.from('event_responses').select('*').eq('user_email', userEmail);
+                const userEmail = currentUser?.email || currentProfile?.email;
+                const { data: myResponses, error: myResponsesError } = await supabaseClient.from('event_responses').select('*').eq('user_email', userEmail);
+                if (myResponsesError) {
+                    console.error('Αδυναμία φόρτωσης προσωπικών απαντήσεων:', myResponsesError);
+                }
                 
                 const totalEventsCount = events?.length || 0;
-                const attendedCount = myResponses?.filter(r => r.status === 'Going').length || 0;
-                const absentCount = myResponses?.filter(r => r.status === 'Not Going').length || 0;
+                const attendedCount = myResponses?.filter(r => String(r.status).toLowerCase() === 'going').length || 0;
+                const absentCount = myResponses?.filter(r => String(r.status).toLowerCase() === 'not going').length || 0;
                 const pendingCount = totalEventsCount - (attendedCount + absentCount);
 
                 html += `
@@ -1778,7 +1801,7 @@
                         <h3 class="font-bold text-sm text-indigo-300 mb-3">Ιστορικό Αιτιολογιών Απουσίας</h3>
                 `;
 
-                const myAbsencesWithExcuses = myResponses?.filter(r => r.status === 'Not Going') || [];
+                const myAbsencesWithExcuses = myResponses?.filter(r => String(r.status).toLowerCase() === 'not going') || [];
 
                 if (myAbsencesWithExcuses.length === 0) {
                     html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν έχετε καταχωρημένες απουσίες με αιτιολογία.</div>`;
@@ -1946,7 +1969,7 @@
                 excuse = ''; 
             }
 
-            const userEmail = currentProfile?.email || currentUser?.email;
+            const userEmail = currentUser?.email || currentProfile?.email;
             if (!userEmail) {
                 alert('Σφάλμα: Δεν βρέθηκε ενεργό email χρήστη.');
                 return;
@@ -1957,7 +1980,13 @@
                 .select('*')
                 .eq('event_id', eventId)
                 .eq('user_email', userEmail)
+                .limit(1)
                 .maybeSingle();
+
+            if (fetchError) {
+                alert('Σφάλμα ελέγχου απάντησης: ' + fetchError.message);
+                return;
+            }
 
             let error;
             if (existing) {
