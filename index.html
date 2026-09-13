@@ -41,8 +41,19 @@
             border: none;
         }
         .app-navbar {
-            bottom: 0;
-            padding-bottom: max(6px, env(safe-area-inset-bottom));
+            bottom: max(10px, env(safe-area-inset-bottom));
+        }
+        .app-navbar::after {
+            content: '';
+            position: absolute;
+            z-index: 0;
+            top: 100%;
+            left: 0;
+            right: 0;
+            height: max(10px, env(safe-area-inset-bottom));
+            background: rgba(30, 41, 59, 0.95);
+            border-top: 1px solid rgba(51, 65, 85, 0.7);
+            pointer-events: none;
         }
         html, body {
             touch-action: manipulation;
