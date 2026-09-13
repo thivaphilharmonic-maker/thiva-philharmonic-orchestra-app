@@ -1717,6 +1717,18 @@
                 if (!events || events.length === 0) {
                     html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν εκδηλώσεις.</div>`;
                 } else {
+                    const { data: profiles, error: profilesError } = await supabaseClient
+                        .from('profiles')
+                        .select('email, first_name, last_name, instrument');
+                    if (profilesError) {
+                        console.error('Αδυναμία φόρτωσης προφίλ για τις παρουσίες:', profilesError);
+                    }
+                    const profilesByEmail = new Map(
+                        (profiles || []).map(profile => [
+                            String(profile.email || '').trim().toLowerCase(),
+                            profile
+                        ])
+                    );
                     html += `<div class="space-y-4">`;
                     for (const ev of events) {
                         const { data: attendanceData, error: attError } = await supabaseClient
@@ -1751,18 +1763,20 @@
                                         <span class="text-emerald-400 font-semibold block mb-1">✅ Θα πάνε (${goingList.length})</span>
                                         ${goingList.length === 0 ? '<span class="text-slate-500 italic">Καμία δήλωση</span>' : 
                                           goingList.map(r => {
-                                              const fullName = r.user_email;
-                                              const instrument = '';
-                                              return `<div class="text-slate-300 truncate">• ${escapeHtml(fullName)}${escapeHtml(instrument)}</div>`;
-                                          }).join('')}
+                                            const profile = profilesByEmail.get(String(r.user_email || '').trim().toLowerCase());
+                                            const fullName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || r.user_email;
+                                            const instrument = profile?.instrument ? ` (${profile.instrument})` : '';
+                                            return `<div class="text-slate-300 truncate">• ${escapeHtml(fullName)}${escapeHtml(instrument)}</div>`;
+                                        }).join('')}
                                     </div>
                                     <div class="bg-slate-900 p-2.5 rounded border border-slate-700/60">
                                         <span class="text-red-400 font-semibold block mb-1">❌ Απόντες (${notGoingList.length})</span>
                                         ${notGoingList.length === 0 ? '<span class="text-slate-500 italic">Κανένας</span>' : 
                                           notGoingList.map(r => {
-                                              const fullName = r.user_email;
-                                              const instrument = '';
-                                              return `<div class="text-slate-300 mb-1">• <b>${escapeHtml(fullName)}${escapeHtml(instrument)}</b><br><span class="text-[10px] text-slate-400 italic">"${escapeHtml(r.excuse || 'Χωρίς αιτιολογία')}"</span></div>`;
+                                            const profile = profilesByEmail.get(String(r.user_email || '').trim().toLowerCase());
+                                            const fullName = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || r.user_email;
+                                            const instrument = profile?.instrument ? ` (${profile.instrument})` : '';
+                                            return `<div class="text-slate-300 mb-1">• <b>${escapeHtml(fullName)}${escapeHtml(instrument)}</b><br><span class="text-[10px] text-slate-400 italic">"${escapeHtml(r.excuse || 'Χωρίς αιτιολογία')}"</span></div>`;
                                           }).join('')}
                                     </div>
                                 </div>
