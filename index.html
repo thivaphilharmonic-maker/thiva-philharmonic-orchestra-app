@@ -101,7 +101,7 @@
         //    It should look something like:
         //    'BLR4rZ8...about 87 chars...g7kM'
         // =====================================================================
-        const VAPID_PUBLIC_KEY = 'AhU8WtA7XUm5cj96uAbQ7ddxE9qCkwxHrSSL8vH9niOe';
+        const VAPID_PUBLIC_KEY = 'BC9s7cPQRYLAe_-FG11M_RI5WZOOAUDDGijHAOgrpmO6w62YW1NEieBqXvYb-_HTQDnzqcZhn0MVvtxxF05YJuc';
 
         // =====================================================================
         // 👇 PASTE YOUR SUPABASE EDGE FUNCTION URL HERE (ONCE YOU DEPLOY IT)
@@ -112,14 +112,18 @@
 
         function urlB64ToUint8Array(base64String) {
             if (!base64String || base64String === 'PASTE_YOUR_VAPID_PUBLIC_KEY_HERE') return null;
-            const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-            const rawData = window.atob(base64);
-            const outputArray = new Uint8Array(rawData.length);
-            for (let i = 0; i < rawData.length; ++i) {
-                outputArray[i] = rawData.charCodeAt(i);
+            try {
+                const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+                const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+                const rawData = window.atob(base64);
+                const outputArray = new Uint8Array(rawData.length);
+                for (let i = 0; i < rawData.length; ++i) {
+                    outputArray[i] = rawData.charCodeAt(i);
+                }
+                return outputArray.length === 65 ? outputArray : null;
+            } catch {
+                return null;
             }
-            return outputArray;
         }
 
         function escapeHtml(value) {
@@ -176,6 +180,7 @@
         let musicFilter = { search: '', instrument: 'all', set: 'all', myInstrumentOnly: false };
 
         let pushSubscription = null;
+        let serviceWorkerRegistration = null;
 
         async function init() {
             registerServiceWorker();
@@ -214,21 +219,27 @@
         }
 
         function registerServiceWorker() {
-            if ('serviceWorker' in navigator) {
-                window.addEventListener('load', () => {
-                    navigator.serviceWorker.register('./sw.js').then(reg => {
-                        console.log('Service Worker registered:', reg.scope);
-                    }).catch(err => {
-                        console.warn('Service Worker registration failed:', err);
-                    });
+            if (!('serviceWorker' in navigator)) return Promise.resolve(null);
+            if (serviceWorkerRegistration) return serviceWorkerRegistration;
+
+            serviceWorkerRegistration = navigator.serviceWorker.register('./sw.js')
+                .then(reg => {
+                    console.log('Service Worker registered:', reg.scope);
+                    return reg;
+                })
+                .catch(err => {
+                    serviceWorkerRegistration = null;
+                    console.warn('Service Worker registration failed:', err);
+                    return null;
                 });
-            }
+            return serviceWorkerRegistration;
         }
 
         async function initPushSupport() {
             if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
             try {
-                const reg = await navigator.serviceWorker.ready;
+                const reg = await registerServiceWorker();
+                if (!reg) return;
                 pushSubscription = await reg.pushManager.getSubscription();
             } catch (e) {
                 console.warn('Push init failed:', e);
@@ -924,7 +935,7 @@
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                                 <button onclick="sendAdminAnnouncementDirect()"
                                     class="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded text-xs font-bold disabled:opacity-40"
-                                    ${(!vapidOK || !edgeFnOK) ? 'disabled title="Χρειάζεται VAPID + Edge Function URL"' : ''}>🚀 Απευθείας Αποστολή
+                                    >🚀 Απευθείας Αποστολή
                                     <span class="block text-[9px] font-normal opacity-80">(από το app / iPhone)</span>
                                 </button>
                                 <button onclick="sendAdminAnnouncementDownloadJSON()"
@@ -1261,7 +1272,8 @@
             }
 
             try {
-                const reg = await navigator.serviceWorker.ready;
+                const reg = await registerServiceWorker();
+                if (!reg) throw new Error('Δεν ήταν δυνατή η ενεργοποίηση του Service Worker.');
                 const permission = await Notification.requestPermission();
                 if (permission !== 'granted') {
                     alert('Η άδεια ειδοποιήσεων δεν εγκρίθηκε.');
@@ -1325,6 +1337,10 @@
             if (!title || !body) { alert('Παρακαλώ συμπληρώστε τίτλο και μήνυμα.'); return; }
 
             const edgeUrl = PUSH_EDGE_FUNCTION_URL || '';
+            if (!urlB64ToUint8Array(VAPID_PUBLIC_KEY)) {
+                alert('Το VAPID public key δεν είναι έγκυρο. Πρέπει να είναι το νέο, μεγαλύτερο κλειδί από generate_vapid_keys.js.');
+                return;
+            }
             if (edgeUrl.length < 10) {
                 alert('Δεν έχει οριστεί το URL του Edge Function!\n\nΕνεργοποιήστε το push-sender στο Supabase Dashboard -> Edge Functions και επικολλήστε το URL στη μεταβλητή PUSH_EDGE_FUNCTION_URL στο index.html.');
                 return;
