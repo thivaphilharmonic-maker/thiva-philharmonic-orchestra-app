@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'thiva-philharmonic-v3';
+const CACHE_VERSION = 'thiva-philharmonic-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PDF_CACHE = `${CACHE_VERSION}-pdfs`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
@@ -116,7 +116,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    const url = event.notification.data && event.notification.data.url ? event.notification.data.url : './index.html';
+    const url = event.notification.data && event.notification.data.url ? event.notification.data.url : './index.html#notifications';
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
             for (const c of clients) {
