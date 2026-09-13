@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Φιλαρμονική Θήβας">
-    <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png">
+    <link rel="apple-touch-icon" href="./thiva_app_icon.png">
     <link rel="manifest" id="pwa-manifest">
 
     <!-- Tailwind CSS for modern mobile-first styling -->
@@ -57,7 +57,7 @@
             <button onclick="switchTab('music')" id="nav-music" class="flex-1 text-slate-400 font-medium text-[10px] leading-tight">🎼<span class="block mt-1">Παρτιτούρες</span></button>
             <button onclick="switchTab('events')" id="nav-events" class="flex-1 text-slate-400 font-medium text-[10px] leading-tight">📅<span class="block mt-1">Πρόγραμμα</span></button>
             <button onclick="switchTab('home')" id="nav-home" aria-label="Αρχική" class="relative -mt-8 mx-1 flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-4 border-slate-900 bg-slate-800 shadow-lg">
-                <img src="https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png" alt="Αρχική" class="h-12 w-12 rounded-full object-contain">
+                <img src="./thiva_home_button.png" alt="Αρχική" class="h-14 w-14 rounded-full object-contain">
             </button>
             <button onclick="switchTab('attendance')" id="nav-attendance" class="flex-1 text-slate-400 font-medium text-[10px] leading-tight">✓<span class="block mt-1">Παρουσίες</span></button>
             <button onclick="switchTab('profile')" id="nav-profile" class="flex-1 text-slate-400 font-medium text-[10px] leading-tight">♙<span class="block mt-1">Προφίλ</span></button>
@@ -98,6 +98,7 @@
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const LOGO_URL = 'https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png';
+        const APP_ICON_URL = './thiva_app_icon.png';
 
         // =====================================================================
         // 👇 PASTE YOUR VAPID PUBLIC KEY HERE (from generate_vapid_keys.js)
@@ -155,7 +156,9 @@
             "display": "standalone",
             "background_color": "#0f172a",
             "theme_color": "#1e293b",
-            "icons": [{ "src": LOGO_URL, "sizes": "512x512", "type": "image/png" }]
+            "icons": [
+                { "src": APP_ICON_URL, "sizes": "1024x1024", "type": "image/png", "purpose": "any maskable" }
+            ]
         };
         document.getElementById('pwa-manifest').href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifestData));
 
