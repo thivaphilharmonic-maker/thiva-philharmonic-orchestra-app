@@ -63,8 +63,18 @@
             pointer-events: none;
             transform: translateY(8px);
         }
+        #viewer-show-controls {
+            display: none;
+        }
         #pdf-viewer-container.reader-mode #viewer-show-controls {
             display: block;
+        }
+        .viewer-float {
+            position: absolute;
+            z-index: 2;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(51, 65, 85, 0.9);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
         }
         @media (orientation: landscape) and (max-height: 600px) {
             #app,
@@ -100,31 +110,27 @@
 
     <!-- PDF VIEWER & ANNOTATION MODAL CONTAINER -->
     <div id="pdf-viewer-container" class="hidden fixed inset-0 bg-slate-950/95 z-50 flex flex-col p-3 max-w-md mx-auto">
-        <div class="viewer-chrome flex justify-between items-center bg-slate-900/95 p-2.5 rounded-xl border border-slate-800 mb-2 shadow-lg">
-            <button onclick="closePdfViewer()" class="text-slate-300 hover:text-white text-xs font-semibold px-2 py-1.5 rounded-lg hover:bg-slate-800">✕ Κλείσιμο</button>
-            <div class="flex items-center gap-2 text-xs">
-                <button onclick="changePage(-1)" aria-label="Προηγούμενη σελίδα" class="bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg text-white">◀</button>
-                <span id="page-num-display" class="text-indigo-300 font-medium min-w-[90px] text-center">Σελίδα 1 / 1</span>
-                <button onclick="changePage(1)" aria-label="Επόμενη σελίδα" class="bg-slate-800 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg text-white">▶</button>
-            </div>
-            <button onclick="clearCanvas()" class="text-red-300 hover:text-red-200 text-xs font-semibold px-2 py-1.5 rounded-lg hover:bg-slate-800">Καθαρισμός</button>
+        <button onclick="closePdfViewer()" aria-label="Κλείσιμο παρτιτούρας" class="viewer-chrome viewer-float top-3 left-3 text-slate-200 text-lg w-10 h-10 rounded-full">×</button>
+        <div class="viewer-chrome viewer-float top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-2 py-1.5 rounded-full">
+            <button onclick="changePage(-1)" aria-label="Προηγούμενη σελίδα" class="text-white px-2">◀</button>
+            <span id="page-num-display" class="text-indigo-300 font-medium min-w-[80px] text-center text-xs">Σελίδα 1 / 1</span>
+            <button onclick="changePage(1)" aria-label="Επόμενη σελίδα" class="text-white px-2">▶</button>
         </div>
+        <button id="viewer-show-controls" onclick="toggleViewerChrome()" aria-label="Εμφάνιση εργαλείων" class="viewer-float top-3 right-3 text-slate-200 text-xs px-3 py-2 rounded-full">Εργαλεία</button>
 
-        <div id="canvas-wrapper" class="relative flex-1 overflow-auto bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-center p-2">
+        <div id="canvas-wrapper" class="relative flex-1 overflow-auto bg-slate-900 rounded-lg border border-slate-800 flex items-center justify-center p-2 mt-1">
             <div id="score-stage">
                 <canvas id="pdf-canvas" class="shadow-lg"></canvas>
                 <canvas id="draw-canvas" class="absolute inset-0 cursor-crosshair touch-none"></canvas>
             </div>
         </div>
 
-        <div class="viewer-chrome flex justify-between items-center bg-slate-900/95 p-2.5 rounded-xl border border-slate-800 mt-2 text-xs shadow-lg">
-            <div class="flex items-center gap-1">
-                <button onclick="setTool('pen')" id="tool-pen" class="bg-indigo-600 px-3 py-1.5 rounded text-white font-semibold">Πένα</button>
-                <button onclick="setTool('eraser')" id="tool-eraser" class="bg-slate-800 px-3 py-1.5 rounded text-slate-300">Γόμα</button>
-            </div>
-            <button onclick="saveAnnotations()" class="bg-emerald-600 hover:bg-emerald-500 px-3.5 py-1.5 rounded-lg text-white font-semibold">Αποθήκευση</button>
+        <div class="viewer-chrome flex items-center justify-center gap-2 bg-slate-900/95 p-2 rounded-xl border border-slate-800 mt-2 text-xs shadow-lg">
+            <button onclick="setTool('pen')" id="tool-pen" aria-label="Πένα" class="bg-indigo-600 px-3 py-2 rounded-lg text-white font-semibold">✎</button>
+            <button onclick="setTool('eraser')" id="tool-eraser" aria-label="Γόμα" class="bg-slate-800 px-3 py-2 rounded-lg text-slate-300">⌫</button>
+            <button onclick="clearCanvas()" aria-label="Καθαρισμός σημειώσεων" class="bg-slate-800 px-3 py-2 rounded-lg text-red-300">🗑</button>
+            <button onclick="saveAnnotations()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-white font-semibold">Αποθήκευση</button>
         </div>
-        <button id="viewer-show-controls" onclick="toggleViewerChrome()" aria-label="Εμφάνιση εργαλείων" class="hidden absolute top-3 right-3 bg-slate-800/90 text-white text-xs px-3 py-2 rounded-lg shadow-lg">Εργαλεία</button>
     </div>
 
     <!-- JAVASCRIPT APP LOGIC -->
@@ -778,6 +784,7 @@
         async function openPdfViewer(pdfUrl, pieceId) {
             activePieceId = pieceId;
             pageNum = 1;
+            Object.keys(pageAnnotations).forEach(page => delete pageAnnotations[page]);
             document.getElementById('pdf-viewer-container').classList.remove('hidden');
             document.getElementById('pdf-viewer-container').classList.remove('reader-mode');
             
@@ -983,7 +990,7 @@
         }
 
         function restorePageFromMemory() {
-            clearCanvas();
+            clearDrawingCanvas();
             if (pageAnnotations[pageNum]) {
                 const img = new Image();
                 img.onload = () => {
@@ -1094,8 +1101,12 @@
         }
 
         function clearCanvas() {
-            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            clearDrawingCanvas();
             delete pageAnnotations[pageNum];
+        }
+
+        function clearDrawingCanvas() {
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
         }
 
         function saveAnnotations() {
