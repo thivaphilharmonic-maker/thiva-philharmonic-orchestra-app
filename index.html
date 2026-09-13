@@ -220,6 +220,7 @@
         let isDrawing = false;
         let pinchStartDistance = null;
         let pinchStartZoom = null;
+        let pinchStartMidpoint = null;
         let scoreStage = null;
         let lastScoreTapAt = 0;
         let lastScoreTapX = 0;
@@ -808,6 +809,7 @@
             activePieceId = null;
             pinchStartDistance = null;
             pinchStartZoom = null;
+            pinchStartMidpoint = null;
             lastScoreTapAt = 0;
         }
 
@@ -820,15 +822,27 @@
             minimumScoreScale = Math.max(0.5, availableWidth / baseViewport.width);
             scale = minimumScoreScale;
             const viewport = page.getViewport({ scale: scale });
+            const outputScale = window.devicePixelRatio || 1;
             
-            pdfCanvas.height = viewport.height;
-            pdfCanvas.width = viewport.width;
-            drawCanvas.height = viewport.height;
-            drawCanvas.width = viewport.width;
+            pdfCanvas.width = Math.floor(viewport.width * outputScale);
+            pdfCanvas.height = Math.floor(viewport.height * outputScale);
+            pdfCanvas.style.width = `${viewport.width}px`;
+            pdfCanvas.style.height = `${viewport.height}px`;
+            drawCanvas.width = Math.floor(viewport.width * outputScale);
+            drawCanvas.height = Math.floor(viewport.height * outputScale);
+            drawCanvas.style.width = `${viewport.width}px`;
+            drawCanvas.style.height = `${viewport.height}px`;
 
-            await page.render({ canvasContext: pdfCtx, viewport: viewport }).promise;
+            await page.render({
+                canvasContext: pdfCtx,
+                viewport,
+                transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null
+            }).promise;
 
+            pdfCtx.save();
+            pdfCtx.setTransform(outputScale, 0, 0, outputScale, 0, 0);
             applyWatermarks(pdfCtx, viewport.width, viewport.height);
+            pdfCtx.restore();
 
             pageRendering = false;
             document.getElementById('page-num-display').innerText = `Σελίδα ${num} / ${pdfDoc.numPages}`;
@@ -848,9 +862,17 @@
         }
 
         function toggleScoreZoom(x, y) {
-            scoreStage.style.transformOrigin = `${x}px ${y}px`;
+            const rect = scoreStage.getBoundingClientRect();
+            scoreStage.style.transformOrigin = `${((x - rect.left) / rect.width) * 100}% ${((y - rect.top) / rect.height) * 100}%`;
             scoreZoom = scoreZoom > 1.01 ? 1 : 2;
             applyScoreZoom();
+        }
+
+        function getTouchMidpoint(touches) {
+            return {
+                x: (touches[0].clientX + touches[1].clientX) / 2,
+                y: (touches[0].clientY + touches[1].clientY) / 2
+            };
         }
 
         function getTouchDistance(touches) {
@@ -867,6 +889,9 @@
                 isDrawing = false;
                 pinchStartDistance = getTouchDistance(event.touches);
                 pinchStartZoom = scoreZoom;
+                pinchStartMidpoint = getTouchMidpoint(event.touches);
+                const rect = scoreStage.getBoundingClientRect();
+                scoreStage.style.transformOrigin = `${((pinchStartMidpoint.x - rect.left) / rect.width) * 100}% ${((pinchStartMidpoint.y - rect.top) / rect.height) * 100}%`;
             };
             wrapper.ontouchmove = (event) => {
                 if (event.touches.length !== 2 || !pinchStartDistance || !pinchStartZoom) return;
@@ -881,21 +906,19 @@
                     if (event.touches.length > 0) return;
                     pinchStartDistance = null;
                     pinchStartZoom = null;
+                    pinchStartMidpoint = null;
                     return;
                 }
 
                 if (!touchWasDrawing && eventChangedTouchesAreScoreTap(event)) {
                     const touch = event.changedTouches[0];
                     const now = Date.now();
-                    const rect = scoreStage.getBoundingClientRect();
-                    const x = touch.clientX - rect.left;
-                    const y = touch.clientY - rect.top;
                     const isDoubleTap = now - lastScoreTapAt < 300 &&
                         Math.hypot(touch.clientX - lastScoreTapX, touch.clientY - lastScoreTapY) < 30;
                     if (isDoubleTap) {
                         lastScoreTapAt = 0;
                         clearTimeout(scoreTapTimer);
-                        toggleScoreZoom(x, y);
+                        toggleScoreZoom(touch.clientX, touch.clientY);
                     } else {
                         lastScoreTapAt = now;
                         lastScoreTapX = touch.clientX;
