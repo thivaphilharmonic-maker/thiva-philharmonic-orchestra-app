@@ -58,6 +58,7 @@
             <button onclick="switchTab('events')" id="nav-events" class="text-slate-400 font-medium text-xs">Πρόγραμμα</button>
             <button onclick="switchTab('attendance')" id="nav-attendance" class="text-slate-400 font-medium text-xs">Παρουσίες</button>
             <button onclick="switchTab('profile')" id="nav-profile" class="text-slate-400 font-medium text-xs">Προφίλ</button>
+            <button onclick="switchTab('notifications')" id="nav-notifications" class="text-slate-400 font-medium text-xs">Νέα</button>
         </nav>
     </div>
 
@@ -185,6 +186,7 @@
         async function init() {
             registerServiceWorker();
             initPushSupport();
+            if (window.location.hash === '#notifications') activeTab = 'notifications';
 
             if (window.location.hash.includes('type=invite') || window.location.hash.includes('type=recovery')) {
                 renderSetPasswordScreen();
@@ -347,7 +349,7 @@
 
         async function renderApp() {
             document.getElementById('navbar').classList.remove('hidden');
-            ['music', 'events', 'attendance', 'profile'].forEach(t => {
+            ['music', 'events', 'attendance', 'profile', 'notifications'].forEach(t => {
                 const btn = document.getElementById(`nav-${t}`);
                 if (t === activeTab) {
                     btn.className = "text-indigo-400 font-bold text-xs";
@@ -364,6 +366,47 @@
             else if (activeTab === 'events') renderEventsTab();
             else if (activeTab === 'attendance') renderAttendanceTab();
             else if (activeTab === 'profile') renderProfileTab();
+            else if (activeTab === 'notifications') renderNotificationsTab();
+        }
+
+        async function renderNotificationsTab() {
+            const content = document.getElementById('content');
+            content.innerHTML = '<h2 class="text-2xl font-bold mb-4">Ανακοινώσεις</h2><p class="text-slate-400 text-sm">Φόρτωση ανακοινώσεων...</p>';
+
+            const { data: announcements, error } = await supabaseClient
+                .from('announcement_log')
+                .select('id, title, body, sent_by_email, created_at')
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Ανακοινώσεις</h2><p class="text-red-400 text-sm">Σφάλμα φόρτωσης ανακοινώσεων: ${escapeHtml(error.message)}</p>`;
+                return;
+            }
+
+            let html = `
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-2xl font-bold">Ανακοινώσεις</h2>
+                    <img src="${LOGO_URL}" alt="Logo" class="w-10 h-10 object-contain">
+                </div>
+            `;
+
+            if (!announcements || announcements.length === 0) {
+                html += '<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν ανακοινώσεις ακόμα.</div>';
+            } else {
+                html += '<div class="space-y-3">';
+                announcements.forEach(item => {
+                    const date = item.created_at ? new Date(item.created_at).toLocaleString('el-GR') : '';
+                    html += `
+                        <article class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                            <h3 class="font-bold text-base text-white">${escapeHtml(item.title)}</h3>
+                            <p class="text-xs text-slate-500 mt-1">${escapeHtml(date)}</p>
+                            <p class="text-sm text-slate-200 mt-3 whitespace-pre-wrap">${escapeHtml(item.body)}</p>
+                        </article>
+                    `;
+                });
+                html += '</div>';
+            }
+            content.innerHTML = html;
         }
 
         // --- MUSIC TAB ---
@@ -1365,7 +1408,7 @@
                         'Authorization': `Bearer ${session.access_token}`,
                         'apikey': SUPABASE_ANON_KEY
                     },
-                    body: JSON.stringify({ title, body, url: './index.html#events' })
+                    body: JSON.stringify({ title, body, url: './index.html#notifications' })
                 });
 
                 const data = await res.json().catch(() => ({}));
@@ -1417,7 +1460,7 @@
                     const payload = {
                         announcement: {
                             title, body,
-                            url: './index.html#events',
+                            url: './index.html#notifications',
                             sent_by_email: sentBy,
                             target_count: count,
                             created_at: new Date().toISOString()
