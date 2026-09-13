@@ -43,6 +43,12 @@
         .app-navbar {
             bottom: max(10px, env(safe-area-inset-bottom));
         }
+        @media (orientation: landscape) and (max-height: 600px) {
+            #app,
+            #navbar {
+                max-width: none;
+            }
+        }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
