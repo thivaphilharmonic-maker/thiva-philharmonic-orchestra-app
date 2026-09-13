@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'thiva-philharmonic-v1';
+const CACHE_VERSION = 'thiva-philharmonic-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PDF_CACHE = `${CACHE_VERSION}-pdfs`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
@@ -67,15 +67,12 @@ self.addEventListener('fetch', (event) => {
 
     if (url.origin === location.origin || STATIC_ASSETS.includes(url.pathname) || STATIC_ASSETS.includes(url.href)) {
         event.respondWith(
-            caches.match(req).then((cached) => {
-                const fetchPromise = fetch(req).then((resp) => {
-                    if (resp.ok) {
-                        caches.open(RUNTIME_CACHE).then(c => c.put(req, resp.clone())).catch(() => {});
-                    }
-                    return resp;
-                }).catch(() => cached || caches.match('./index.html'));
-                return cached || fetchPromise;
-            })
+            fetch(req).then((resp) => {
+                if (resp.ok) {
+                    caches.open(RUNTIME_CACHE).then(c => c.put(req, resp.clone())).catch(() => {});
+                }
+                return resp;
+            }).catch(() => caches.match(req).then(cached => cached || caches.match('./index.html')))
         );
         return;
     }
