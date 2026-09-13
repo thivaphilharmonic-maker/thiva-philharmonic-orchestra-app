@@ -103,6 +103,7 @@
 
         const LOGO_URL = 'https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png';
         const APP_ICON_URL = './thiva_app_icon.png';
+        const ANDROID_ICON_URL = './thiva_app_icon_android.png';
 
         // =====================================================================
         // 👇 PASTE YOUR VAPID PUBLIC KEY HERE (from generate_vapid_keys.js)
@@ -161,7 +162,8 @@
             "background_color": "#0f172a",
             "theme_color": "#1e293b",
             "icons": [
-                { "src": APP_ICON_URL, "sizes": "1024x1024", "type": "image/png", "purpose": "any maskable" }
+                { "src": APP_ICON_URL, "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+                { "src": ANDROID_ICON_URL, "sizes": "1024x1024", "type": "image/png", "purpose": "maskable" }
             ]
         };
         document.getElementById('pwa-manifest').href = 'data:application/manifest+json;charset=utf-8,' + encodeURIComponent(JSON.stringify(manifestData));
