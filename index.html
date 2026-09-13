@@ -85,6 +85,52 @@
             border: 1px solid rgba(51, 65, 85, 0.9);
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
         }
+        .annotation-island {
+            position: absolute;
+            z-index: 3;
+            left: 50%;
+            bottom: max(12px, env(safe-area-inset-bottom));
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px;
+            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.94);
+            border: 1px solid rgba(71, 85, 105, 0.85);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        }
+        .annotation-island button {
+            min-width: 38px;
+            height: 36px;
+            border-radius: 12px;
+        }
+        .annotation-popover {
+            position: absolute;
+            z-index: 4;
+            bottom: calc(max(12px, env(safe-area-inset-bottom)) + 52px);
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            gap: 6px;
+            padding: 8px;
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.97);
+            border: 1px solid rgba(71, 85, 105, 0.9);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+        }
+        .annotation-popover.open {
+            display: flex;
+        }
+        .annotation-popover button {
+            width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            border: 2px solid transparent;
+        }
+        .annotation-popover button.selected {
+            border-color: white;
+        }
         @media (orientation: landscape) and (max-height: 600px) {
             #app,
             #navbar,
@@ -134,12 +180,15 @@
             </div>
         </div>
 
-        <div class="viewer-chrome flex items-center justify-center gap-2 bg-slate-900/95 p-2 rounded-xl border border-slate-800 mt-2 mx-2 mb-2 text-xs shadow-lg">
-            <button onclick="setTool('pen')" id="tool-pen" aria-label="Πένα" class="bg-indigo-600 px-3 py-2 rounded-lg text-white font-semibold">✎</button>
-            <button onclick="setTool('eraser')" id="tool-eraser" aria-label="Γόμα" class="bg-slate-800 px-3 py-2 rounded-lg text-slate-300">⌫</button>
-            <button onclick="clearCanvas()" aria-label="Καθαρισμός σημειώσεων" class="bg-slate-800 px-3 py-2 rounded-lg text-red-300">🗑</button>
-            <button onclick="saveAnnotations()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-white font-semibold">Αποθήκευση</button>
+        <div class="viewer-chrome annotation-island">
+            <button onclick="setTool('hand')" id="tool-hand" aria-label="Χέρι" class="bg-indigo-600 text-white text-lg">✋</button>
+            <button onclick="setTool('pen')" id="tool-pen" aria-label="Πένα" class="bg-slate-800 text-slate-300 text-lg">✎</button>
+            <button onclick="setTool('highlighter')" id="tool-highlighter" aria-label="Μαρκαδόρος" class="bg-slate-800 text-slate-300 text-lg">▰</button>
+            <button onclick="setTool('eraser')" id="tool-eraser" aria-label="Γόμα" class="bg-slate-800 text-slate-300 text-lg">⌫</button>
+            <button onclick="clearCanvas()" aria-label="Καθαρισμός σημειώσεων" class="bg-slate-800 text-red-300 text-lg">🗑</button>
+            <button onclick="saveAnnotations()" aria-label="Αποθήκευση σημειώσεων" class="bg-emerald-600 text-white text-lg">✓</button>
         </div>
+        <div id="annotation-options" class="annotation-popover viewer-chrome"></div>
     </div>
 
     <!-- JAVASCRIPT APP LOGIC -->
@@ -240,6 +289,10 @@
         let panY = 0;
         let panStartX = 0;
         let panStartY = 0;
+        let handStartX = 0;
+        let handStartY = 0;
+        let handStartPanX = 0;
+        let handStartPanY = 0;
         let scoreStage = null;
         let lastScoreTapAt = 0;
         let lastScoreTapX = 0;
@@ -250,7 +303,12 @@
         let touchWasDrawing = false;
         let touchGestureActive = false;
         let viewerResizeTimer = null;
-        let currentTool = 'pen';
+        let currentTool = 'hand';
+        const annotationSettings = {
+            pen: { color: '#111827', width: 3.5 },
+            highlighter: { color: '#facc15', width: 18 },
+            eraser: { width: 20 }
+        };
         let activePieceId = null;
 
         let currentCalendarMonth = new Date().getMonth();
@@ -823,6 +881,7 @@
 
             setupDrawingEvents();
             setupScoreGestures();
+            setTool('hand');
 
             try {
                 const loadingTask = pdfjsLib.getDocument(pdfUrl);
@@ -938,6 +997,15 @@
         function setupScoreGestures() {
             const wrapper = document.getElementById('canvas-wrapper');
             wrapper.ontouchstart = (event) => {
+                if (event.touches.length === 1 && currentTool === 'hand' && scoreStage && scoreStage.contains(event.target)) {
+                    const touch = event.touches[0];
+                    handStartX = touch.clientX;
+                    handStartY = touch.clientY;
+                    handStartPanX = panX;
+                    handStartPanY = panY;
+                    touchGestureActive = true;
+                    return;
+                }
                 if (event.touches.length !== 2) return;
                 event.preventDefault();
                 isDrawing = false;
@@ -951,6 +1019,13 @@
                 scoreStage.style.transformOrigin = `${((pinchStartMidpoint.x - rect.left) / rect.width) * 100}% ${((pinchStartMidpoint.y - rect.top) / rect.height) * 100}%`;
             };
             wrapper.ontouchmove = (event) => {
+                if (event.touches.length === 1 && currentTool === 'hand' && touchGestureActive) {
+                    event.preventDefault();
+                    panX = handStartPanX + event.touches[0].clientX - handStartX;
+                    panY = handStartPanY + event.touches[0].clientY - handStartY;
+                    applyScoreZoom();
+                    return;
+                }
                 if (event.touches.length !== 2 || !pinchStartDistance || !pinchStartZoom) return;
                 event.preventDefault();
                 const nextZoom = Math.min(3, Math.max(0.82, pinchStartZoom * getTouchDistance(event.touches) / pinchStartDistance));
@@ -962,6 +1037,10 @@
                 applyScoreZoom();
             };
             wrapper.ontouchend = (event) => {
+                if (currentTool === 'hand' && event.touches.length === 0 && touchGestureActive && !pinchStartDistance) {
+                    touchGestureActive = false;
+                    return;
+                }
                 if (pinchStartDistance) {
                     if (event.touches.length > 0) return;
                     pinchStartDistance = null;
@@ -1138,9 +1217,12 @@
             const { scaleX, scaleY } = getCanvasScaleRatio();
             const avgScale = (scaleX + scaleY) / 2 || 1;
             if (currentTool === 'pen') {
-                return 3.5 * avgScale;
+                return annotationSettings.pen.width * avgScale;
             }
-            return 20 * avgScale;
+            if (currentTool === 'highlighter') {
+                return annotationSettings.highlighter.width * avgScale;
+            }
+            return annotationSettings.eraser.width * avgScale;
         }
 
         function startDraw(e) {
@@ -1155,13 +1237,21 @@
             const { x, y } = getCanvasCoords(e);
 
             if (currentTool === 'pen') {
-                drawCtx.strokeStyle = '#ef4444';
+                drawCtx.strokeStyle = annotationSettings.pen.color;
                 drawCtx.lineWidth = getToolLineWidth();
                 drawCtx.lineCap = 'round';
                 drawCtx.globalCompositeOperation = 'source-over';
+                drawCtx.globalAlpha = 1;
+            } else if (currentTool === 'highlighter') {
+                drawCtx.strokeStyle = annotationSettings.highlighter.color;
+                drawCtx.lineWidth = getToolLineWidth();
+                drawCtx.lineCap = 'round';
+                drawCtx.globalCompositeOperation = 'source-over';
+                drawCtx.globalAlpha = 0.35;
             } else {
                 drawCtx.lineWidth = getToolLineWidth();
                 drawCtx.globalCompositeOperation = 'destination-out';
+                drawCtx.globalAlpha = 1;
             }
 
             drawCtx.lineTo(x, y);
@@ -1174,8 +1264,49 @@
 
         function setTool(tool) {
             currentTool = tool;
-            document.getElementById('tool-pen').className = tool === 'pen' ? 'bg-indigo-600 px-3 py-1.5 rounded text-white font-semibold' : 'bg-slate-800 px-3 py-1.5 rounded text-slate-300';
-            document.getElementById('tool-eraser').className = tool === 'eraser' ? 'bg-indigo-600 px-3 py-1.5 rounded text-white font-semibold' : 'bg-slate-800 px-3 py-1.5 rounded text-slate-300';
+            ['hand', 'pen', 'highlighter', 'eraser'].forEach(name => {
+                const button = document.getElementById(`tool-${name}`);
+                button.classList.toggle('bg-indigo-600', name === tool);
+                button.classList.toggle('text-white', name === tool);
+                button.classList.toggle('bg-slate-800', name !== tool);
+                button.classList.toggle('text-slate-300', name !== tool);
+            });
+            if (drawCanvas) drawCanvas.style.pointerEvents = tool === 'hand' ? 'none' : 'auto';
+            renderAnnotationOptions();
+        }
+
+        function renderAnnotationOptions() {
+            const options = document.getElementById('annotation-options');
+            if (!options || currentTool === 'hand') {
+                options?.classList.remove('open');
+                return;
+            }
+            const setting = annotationSettings[currentTool];
+            const colors = currentTool === 'pen'
+                ? [['#111827', 'Μαύρο'], ['#ef4444', 'Κόκκινο'], ['#2563eb', 'Μπλε']]
+                : currentTool === 'highlighter'
+                    ? [['#facc15', 'Κίτρινο'], ['#4ade80', 'Πράσινο'], ['#f472b6', 'Ροζ']]
+                    : [];
+            const widths = currentTool === 'pen'
+                ? [[2.5, 'Λεπτή'], [3.5, 'Μεσαία'], [5.5, 'Παχιά']]
+                : currentTool === 'highlighter'
+                    ? [[12, 'Λεπτή'], [18, 'Μεσαία'], [28, 'Παχιά']]
+                    : [[12, 'Μικρή'], [20, 'Μεσαία'], [32, 'Μεγάλη']];
+            options.innerHTML = `
+                ${colors.map(([color, label]) => `<button aria-label="${label}" title="${label}" class="${setting.color === color ? 'selected' : ''}" style="background:${color}" onclick="setAnnotationColor('${color}')"></button>`).join('')}
+                ${widths.map(([width, label]) => `<button aria-label="${label}" title="${label}" class="${setting.width === width ? 'selected' : ''}" style="background:linear-gradient(transparent 42%, #cbd5e1 42%, #cbd5e1 58%, transparent 58%); transform:scale(${Math.min(1.25, width / 20)})" onclick="setAnnotationWidth(${width})"></button>`).join('')}
+            `;
+            options.classList.add('open');
+        }
+
+        function setAnnotationColor(color) {
+            annotationSettings[currentTool].color = color;
+            renderAnnotationOptions();
+        }
+
+        function setAnnotationWidth(width) {
+            annotationSettings[currentTool].width = width;
+            renderAnnotationOptions();
         }
 
         function clearCanvas() {
