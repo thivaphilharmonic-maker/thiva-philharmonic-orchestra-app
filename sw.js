@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'thiva-philharmonic-v4';
+const CACHE_VERSION = 'thiva-philharmonic-v5';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PDF_CACHE = `${CACHE_VERSION}-pdfs`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
@@ -6,6 +6,8 @@ const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const STATIC_ASSETS = [
     './',
     './index.html',
+    './thiva_app_icon.png',
+    './thiva_home_button.png',
     'https://cdn.tailwindcss.com',
     'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
@@ -104,8 +106,8 @@ self.addEventListener('push', (event) => {
 
     const options = {
         body: data.body,
-        icon: 'https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png',
-        badge: 'https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png',
+        icon: './thiva_app_icon.png',
+        badge: './thiva_app_icon.png',
         vibrate: [200, 100, 200],
         tag: data.tag || 'thiva-philharmonic-notification',
         data: data.data || {}
