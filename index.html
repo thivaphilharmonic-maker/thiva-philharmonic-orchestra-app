@@ -282,6 +282,41 @@
             }
         }
 
+        function getGreekVocativeName(name) {
+            const trimmedName = (name || '').trim();
+            if (!trimmedName) return 'μουσικέ';
+
+            const normalizedName = trimmedName.toLocaleLowerCase('el-GR');
+            const irregularForms = {
+                'βασίλης': 'Βασίλη',
+                'γιαννης': 'Γιάννη',
+                'γιάννης': 'Γιάννη',
+                'δημήτρης': 'Δημήτρη',
+                'δημητρης': 'Δημήτρη',
+                'γιώργος': 'Γιώργο',
+                'γεώργιος': 'Γεώργιε',
+                'νίκος': 'Νίκο',
+                'παναγιώτης': 'Παναγιώτη',
+                'χρήστος': 'Χρήστο',
+                'κωνσταντίνος': 'Κωνσταντίνε',
+                'ανδρέας': 'Ανδρέα',
+                'λουκάς': 'Λουκά'
+            };
+            if (irregularForms[normalizedName]) return irregularForms[normalizedName];
+
+            if (normalizedName.endsWith('ης')) {
+                return trimmedName.slice(0, -1);
+            }
+            if (normalizedName.endsWith('ος')) {
+                return trimmedName.slice(0, -1);
+            }
+            if (normalizedName.endsWith('ας')) {
+                return trimmedName.slice(0, -1);
+            }
+
+            return trimmedName;
+        }
+
         function renderLogin() {
             document.getElementById('navbar').classList.add('hidden');
             document.getElementById('content').innerHTML = `
@@ -398,12 +433,13 @@
             }
 
             const firstName = currentProfile?.first_name || currentProfile?.name || 'μουσικέ';
+            const vocativeFirstName = getGreekVocativeName(firstName);
             const nextEvent = events?.[0];
             let html = `
                 <div class="flex items-center justify-between mb-5">
                     <div>
                         <p class="text-sm text-slate-400">Καλώς ήρθες,</p>
-                        <h1 class="text-2xl font-bold text-white">${escapeHtml(firstName)}</h1>
+                        <h1 class="text-2xl font-bold text-white">${escapeHtml(vocativeFirstName)}!</h1>
                     </div>
                 </div>
             `;
