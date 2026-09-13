@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'thiva-philharmonic-v5';
+const CACHE_VERSION = 'thiva-philharmonic-v6';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PDF_CACHE = `${CACHE_VERSION}-pdfs`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
@@ -7,6 +7,7 @@ const STATIC_ASSETS = [
     './',
     './index.html',
     './thiva_app_icon.png',
+    './thiva_app_icon_android.png',
     './thiva_home_button.png',
     'https://cdn.tailwindcss.com',
     'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
