@@ -53,12 +53,14 @@
         </div>
 
         <!-- NAVIGATION BAR (Visible when logged in) -->
-        <nav id="navbar" class="hidden fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 flex justify-around p-3 max-w-md mx-auto z-50">
-            <button onclick="switchTab('music')" id="nav-music" class="text-indigo-400 font-medium text-xs">Παρτιτούρες</button>
-            <button onclick="switchTab('events')" id="nav-events" class="text-slate-400 font-medium text-xs">Πρόγραμμα</button>
-            <button onclick="switchTab('attendance')" id="nav-attendance" class="text-slate-400 font-medium text-xs">Παρουσίες</button>
-            <button onclick="switchTab('profile')" id="nav-profile" class="text-slate-400 font-medium text-xs">Προφίλ</button>
-            <button onclick="switchTab('notifications')" id="nav-notifications" class="text-slate-400 font-medium text-xs">Νέα</button>
+        <nav id="navbar" class="hidden fixed bottom-0 left-0 right-0 bg-slate-800/95 backdrop-blur border-t border-slate-700 flex items-end justify-around px-1 pt-2 pb-3 max-w-md mx-auto z-50">
+            <button onclick="switchTab('music')" id="nav-music" class="flex-1 text-slate-400 font-medium text-[10px] leading-tight">🎼<span class="block mt-1">Παρτιτούρες</span></button>
+            <button onclick="switchTab('events')" id="nav-events" class="flex-1 text-slate-400 font-medium text-[10px] leading-tight">📅<span class="block mt-1">Πρόγραμμα</span></button>
+            <button onclick="switchTab('home')" id="nav-home" aria-label="Αρχική" class="relative -mt-8 mx-1 flex h-16 w-16 shrink-0 items-center justify-center rounded-full border-4 border-slate-900 bg-slate-800 shadow-lg">
+                <img src="https://raw.githubusercontent.com/thivaphilharmonic-maker/thiva-philharmonic-orchestra-app/main/logo.png" alt="Αρχική" class="h-12 w-12 rounded-full object-contain">
+            </button>
+            <button onclick="switchTab('attendance')" id="nav-attendance" class="flex-1 text-slate-400 font-medium text-[10px] leading-tight">✓<span class="block mt-1">Παρουσίες</span></button>
+            <button onclick="switchTab('profile')" id="nav-profile" class="flex-1 text-slate-400 font-medium text-[10px] leading-tight">♙<span class="block mt-1">Προφίλ</span></button>
         </nav>
     </div>
 
@@ -341,7 +343,7 @@
             await supabaseClient.auth.signOut();
         }
 
-        let activeTab = 'music';
+        let activeTab = 'home';
         function switchTab(tab) {
             activeTab = tab;
             renderApp();
@@ -349,12 +351,20 @@
 
         async function renderApp() {
             document.getElementById('navbar').classList.remove('hidden');
-            ['music', 'events', 'attendance', 'profile', 'notifications'].forEach(t => {
+            ['music', 'events', 'home', 'attendance', 'profile'].forEach(t => {
                 const btn = document.getElementById(`nav-${t}`);
                 if (t === activeTab) {
-                    btn.className = "text-indigo-400 font-bold text-xs";
+                    if (t === 'home') {
+                        btn.classList.add('ring-2', 'ring-indigo-400');
+                    } else {
+                        btn.className = "flex-1 text-indigo-400 font-bold text-[10px] leading-tight";
+                    }
                 } else {
-                    btn.className = "text-slate-400 font-medium text-xs";
+                    if (t === 'home') {
+                        btn.classList.remove('ring-2', 'ring-indigo-400');
+                    } else {
+                        btn.className = "flex-1 text-slate-400 font-medium text-[10px] leading-tight";
+                    }
                 }
             });
 
@@ -364,9 +374,72 @@
 
             if (activeTab === 'music') renderMusicTab();
             else if (activeTab === 'events') renderEventsTab();
+            else if (activeTab === 'home') renderHomeTab();
             else if (activeTab === 'attendance') renderAttendanceTab();
             else if (activeTab === 'profile') renderProfileTab();
             else if (activeTab === 'notifications') renderNotificationsTab();
+        }
+
+        async function renderHomeTab() {
+            const content = document.getElementById('content');
+            content.innerHTML = '<h2 class="text-2xl font-bold mb-4">Αρχική</h2><p class="text-slate-400 text-sm">Φόρτωση...</p>';
+
+            const [{ data: announcements, error: announcementsError }, { data: events, error: eventsError }] = await Promise.all([
+                supabaseClient.from('announcement_log').select('id, title, body, created_at').order('created_at', { ascending: false }).limit(3),
+                supabaseClient.from('band_events').select('id, event_name, event_type, date, time, location').gte('date', new Date().toISOString().split('T')[0]).order('date', { ascending: true }).limit(1)
+            ]);
+
+            if (announcementsError || eventsError) {
+                content.innerHTML = `<p class="text-red-400 text-sm">Σφάλμα φόρτωσης αρχικής σελίδας: ${escapeHtml((announcementsError || eventsError).message)}</p>`;
+                return;
+            }
+
+            const firstName = currentProfile?.first_name || currentProfile?.name || 'μουσικέ';
+            const nextEvent = events?.[0];
+            let html = `
+                <div class="flex items-center justify-between mb-5">
+                    <div>
+                        <p class="text-sm text-slate-400">Καλώς ήρθες,</p>
+                        <h1 class="text-2xl font-bold text-white">${escapeHtml(firstName)}</h1>
+                    </div>
+                    <img src="${LOGO_URL}" alt="Logo" class="h-12 w-12 rounded-full object-contain">
+                </div>
+            `;
+
+            if (nextEvent) {
+                html += `
+                    <section class="bg-gradient-to-br from-indigo-700 to-indigo-900 p-4 rounded-2xl shadow-lg mb-4">
+                        <p class="text-xs text-indigo-200 uppercase font-semibold">Επόμενη εκδήλωση</p>
+                        <h2 class="text-xl font-bold text-white mt-1">${escapeHtml(nextEvent.event_name)}</h2>
+                        <p class="text-sm text-indigo-100 mt-2">📅 ${escapeHtml(formatGreekDateOnly(nextEvent.date))}${nextEvent.time ? ` · ${escapeHtml(nextEvent.time)}` : ''}</p>
+                        ${nextEvent.location ? `<p class="text-xs text-indigo-200 mt-1">📍 ${escapeHtml(nextEvent.location)}</p>` : ''}
+                        <button onclick="switchTab('events')" class="mt-3 bg-white/15 hover:bg-white/25 px-3 py-2 rounded-lg text-xs font-semibold text-white">Προβολή προγράμματος</button>
+                    </section>
+                `;
+            }
+
+            html += `
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-lg font-bold">Τελευταίες ανακοινώσεις</h2>
+                    <button onclick="switchTab('notifications')" class="text-xs text-indigo-300 hover:text-indigo-200 underline">Όλες</button>
+                </div>
+            `;
+            if (!announcements || announcements.length === 0) {
+                html += '<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν ανακοινώσεις ακόμα.</div>';
+            } else {
+                html += '<div class="space-y-3">';
+                announcements.forEach(item => {
+                    html += `
+                        <article class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                            <h3 class="font-bold text-base text-white">${escapeHtml(item.title)}</h3>
+                            <p class="text-xs text-slate-500 mt-1">${escapeHtml(item.created_at ? new Date(item.created_at).toLocaleString('el-GR') : '')}</p>
+                            <p class="text-sm text-slate-200 mt-2 line-clamp-3 whitespace-pre-wrap">${escapeHtml(item.body)}</p>
+                        </article>
+                    `;
+                });
+                html += '</div>';
+            }
+            content.innerHTML = html;
         }
 
         async function renderNotificationsTab() {
