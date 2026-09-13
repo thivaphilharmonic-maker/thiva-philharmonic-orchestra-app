@@ -55,6 +55,9 @@
             transform-origin: center center;
             transition: transform 80ms ease-out;
         }
+        #score-stage.score-spring-back {
+            transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
         .viewer-chrome {
             transition: opacity 180ms ease, transform 180ms ease;
         }
@@ -885,6 +888,19 @@
             }
         }
 
+        function springScoreToFit() {
+            if (!scoreStage || scoreZoom >= 1) return;
+            scoreStage.classList.add('score-spring-back');
+            scoreStage.style.transformOrigin = 'center center';
+            scoreZoom = 1;
+            panX = 0;
+            panY = 0;
+            applyScoreZoom();
+            scoreStage.addEventListener('transitionend', () => {
+                scoreStage.classList.remove('score-spring-back');
+            }, { once: true });
+        }
+
         function toggleViewerChrome() {
             document.getElementById('pdf-viewer-container').classList.toggle('reader-mode');
         }
@@ -931,7 +947,7 @@
             wrapper.ontouchmove = (event) => {
                 if (event.touches.length !== 2 || !pinchStartDistance || !pinchStartZoom) return;
                 event.preventDefault();
-                const nextZoom = Math.min(3, Math.max(1, pinchStartZoom * getTouchDistance(event.touches) / pinchStartDistance));
+                const nextZoom = Math.min(3, Math.max(0.82, pinchStartZoom * getTouchDistance(event.touches) / pinchStartDistance));
                 const midpoint = getTouchMidpoint(event.touches);
                 panX = panStartX + midpoint.x - pinchStartMidpoint.x;
                 panY = panStartY + midpoint.y - pinchStartMidpoint.y;
@@ -948,6 +964,7 @@
                     touchGestureActive = false;
                     panStartX = panX;
                     panStartY = panY;
+                    springScoreToFit();
                     return;
                 }
 
