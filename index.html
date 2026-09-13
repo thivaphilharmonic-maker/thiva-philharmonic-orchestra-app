@@ -398,8 +398,13 @@
                     const date = item.created_at ? new Date(item.created_at).toLocaleString('el-GR') : '';
                     html += `
                         <article class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                            <h3 class="font-bold text-base text-white">${escapeHtml(item.title)}</h3>
-                            <p class="text-xs text-slate-500 mt-1">${escapeHtml(date)}</p>
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <h3 class="font-bold text-base text-white">${escapeHtml(item.title)}</h3>
+                                    <p class="text-xs text-slate-500 mt-1">${escapeHtml(date)}</p>
+                                </div>
+                                ${currentProfile?.role === 'admin' ? `<button onclick="deleteAnnouncement(${Number(item.id)})" class="shrink-0 text-red-400 hover:text-red-300 text-xs underline">Διαγραφή</button>` : ''}
+                            </div>
                             <p class="text-sm text-slate-200 mt-3 whitespace-pre-wrap">${escapeHtml(item.body)}</p>
                         </article>
                     `;
@@ -407,6 +412,30 @@
                 html += '</div>';
             }
             content.innerHTML = html;
+        }
+
+        async function deleteAnnouncement(id) {
+            if (currentProfile?.role !== 'admin') {
+                alert('Μόνο οι διαχειριστές μπορούν να διαγράφουν ανακοινώσεις.');
+                return;
+            }
+            const announcementId = Number(id);
+            if (!Number.isSafeInteger(announcementId) || announcementId <= 0) {
+                alert('Μη έγκυρη ανακοίνωση.');
+                return;
+            }
+            if (!confirm('Να διαγραφεί οριστικά αυτή η ανακοίνωση;')) return;
+
+            const { error } = await supabaseClient
+                .from('announcement_log')
+                .delete()
+                .eq('id', announcementId);
+
+            if (error) {
+                alert('Σφάλμα διαγραφής ανακοίνωσης: ' + error.message);
+                return;
+            }
+            await renderNotificationsTab();
         }
 
         // --- MUSIC TAB ---
