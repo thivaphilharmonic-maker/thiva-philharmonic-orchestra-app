@@ -370,6 +370,7 @@
         let annotationHistory = [];
         let annotationRedoHistory = [];
         let annotationsDirty = false;
+        let viewerHistoryActive = false;
         let currentTool = 'hand';
         const annotationSettings = {
             pen: { color: '#111827', width: 3.5 },
@@ -394,6 +395,11 @@
                 await renderPage(pageNum);
                 restorePageFromMemory();
             }, 150);
+        });
+        window.addEventListener('popstate', () => {
+            if (!viewerHistoryActive) return;
+            viewerHistoryActive = false;
+            closePdfViewer(true);
         });
         let serviceWorkerRegistration = null;
 
@@ -934,6 +940,10 @@
         }
 
         async function openPdfViewer(pdfUrl, pieceId) {
+            if (!viewerHistoryActive) {
+                history.pushState({ ...(history.state || {}), pdfViewer: true }, '');
+                viewerHistoryActive = true;
+            }
             activePieceId = pieceId;
             pageNum = 1;
             Object.keys(pageAnnotations).forEach(page => delete pageAnnotations[page]);
@@ -968,7 +978,18 @@
             }
         }
 
-        function closePdfViewer() {
+        function closePdfViewer(fromHistory = false) {
+            if (!fromHistory && viewerHistoryActive) {
+                if (annotationsDirty) {
+                    const shouldSave = confirm('Έχετε μη αποθηκευμένες σημειώσεις. Θέλετε να τις αποθηκεύσετε πριν κλείσετε την παρτιτούρα;');
+                    if (shouldSave) persistAnnotations();
+                    else annotationsDirty = false;
+                }
+                viewerHistoryActive = false;
+                history.back();
+                closePdfViewer(true);
+                return;
+            }
             if (annotationsDirty) {
                 const shouldSave = confirm('Έχετε μη αποθηκευμένες σημειώσεις. Θέλετε να τις αποθηκεύσετε πριν κλείσετε την παρτιτούρα;');
                 if (shouldSave) persistAnnotations();
