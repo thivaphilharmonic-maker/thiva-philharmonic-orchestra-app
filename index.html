@@ -626,8 +626,9 @@
 
             const [{ data: announcements, error: announcementsError }, { data: events, error: eventsError }] = await Promise.all([
                 supabaseClient.from('announcement_log').select('id, title, body, created_at').order('created_at', { ascending: false }).limit(3),
-                supabaseClient.from('band_events').select('id, event_name, event_type, date, time, location').gte('date', new Date().toISOString().split('T')[0]).order('date', { ascending: true }).limit(1)
+                supabaseClient.from('band_events').select('id, event_name, event_type, date, time, location').gte('date', new Date().toISOString().split('T')[0]).order('date', { ascending: true }).order('time', { ascending: true, nullsFirst: false }).order('id', { ascending: true }).limit(1)
             ]);
+            sortEventsChronologically(events);
 
             if (announcementsError || eventsError) {
                 content.innerHTML = `<p class="text-red-400 text-sm">Σφάλμα φόρτωσης αρχικής σελίδας: ${escapeHtml((announcementsError || eventsError).message)}</p>`;
@@ -1534,12 +1535,13 @@
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
 
-            const { data: events, error: eventError } = await supabaseClient.from('band_events').select('*').order('date', { ascending: true });
+            const { data: events, error: eventError } = await supabaseClient.from('band_events').select('*').order('date', { ascending: true }).order('time', { ascending: true, nullsFirst: false }).order('id', { ascending: true });
             
             if (eventError) {
                 content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-red-400 text-sm">Σφάλμα φόρτωσης εκδηλώσεων: ${eventError.message}</p>`;
                 return;
             }
+            sortEventsChronologically(events);
 
             const userEmail = (currentUser?.email || currentProfile?.email || '').trim().toLowerCase();
             const { data: responses, error: responsesError } = await supabaseClient.from('event_responses').select('*').eq('user_email', userEmail);
@@ -1669,12 +1671,13 @@
             const content = document.getElementById('content');
             content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρουσίες</h2><p class="text-slate-400 text-sm">Φόρτωση αναφοράς...</p>`;
 
-            const { data: events, error: eventError } = await supabaseClient.from('band_events').select('*').order('date', { ascending: true });
+            const { data: events, error: eventError } = await supabaseClient.from('band_events').select('*').order('date', { ascending: true }).order('time', { ascending: true, nullsFirst: false }).order('id', { ascending: true });
             
             if (eventError) {
                 content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρουσίες</h2><p class="text-red-400 text-sm">Σφάλμα φόρτωσης δεδομένων.</p>`;
                 return;
             }
+            sortEventsChronologically(events);
 
             const isAdmin = currentProfile?.role === 'admin';
 
@@ -1909,6 +1912,19 @@
             const capitalizedWeekday = weekday.charAt(0).toUpperCase() + weekday.slice(1);
             
             return `${d}/${m}/${y} ${capitalizedWeekday}`;
+        }
+
+        function sortEventsChronologically(events) {
+            if (!Array.isArray(events)) return;
+            events.sort((a, b) => {
+                const dateCompare = String(a.date || '').localeCompare(String(b.date || ''));
+                if (dateCompare !== 0) return dateCompare;
+                const timeA = a.time ? String(a.time) : '99:99';
+                const timeB = b.time ? String(b.time) : '99:99';
+                const timeCompare = timeA.localeCompare(timeB);
+                if (timeCompare !== 0) return timeCompare;
+                return Number(a.id || 0) - Number(b.id || 0);
+            });
         }
 
         function renderCalendarGrid(events) {
