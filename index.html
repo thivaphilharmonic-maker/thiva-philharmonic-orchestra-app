@@ -128,7 +128,7 @@
             gap: 4px;
             padding: 6px;
             border-radius: 18px;
-            background: rgba(15, 23, 42, 0.94);
+            background: rgba(15, 23, 42, 0.7);
             border: 1px solid rgba(71, 85, 105, 0.85);
             box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
         }
@@ -382,10 +382,18 @@
         let currentCalendarMonth = new Date().getMonth();
         let currentCalendarYear = new Date().getFullYear();
 
-        let musicFilter = { search: '', instrument: 'all', set: 'all', myInstrumentOnly: false };
+        let musicFilter = { search: '', instrument: 'all', set: 'all' };
+        let musicLibraryCache = [];
+        let musicTabShellReady = false;
+        let pdfWakeLock = null;
 
         let pushSubscription = null;
 
+        window.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && pdfDoc && !document.getElementById('pdf-viewer-container').classList.contains('hidden')) {
+                requestPdfWakeLock();
+            }
+        });
         window.addEventListener('resize', () => {
             if (!pdfDoc || document.getElementById('pdf-viewer-container').classList.contains('hidden')) return;
             clearTimeout(viewerResizeTimer);
@@ -491,6 +499,53 @@
             } else {
                 currentProfile = { email: currentUser.email, role: 'musician', instrument: 'Μη ορισμένο' };
             }
+
+            if (currentProfile?.id) {
+                const { data: assignments, error: assignmentError } = await supabaseClient
+                    .from('user_instruments')
+                    .select('part_position, concert_set, instruments(name)')
+                    .eq('user_id', currentProfile.id);
+                currentProfile.assignments = assignmentError ? [] : (assignments || []);
+            } else {
+                currentProfile.assignments = [];
+            }
+        }
+
+        function isAdminRole() {
+            return currentProfile?.role === 'admin';
+        }
+
+        function isConductorRole() {
+            return currentProfile?.role === 'conductor';
+        }
+
+        function isPrivilegedRole() {
+            return isAdminRole() || isConductorRole();
+        }
+
+        function formatEventTime(timeValue) {
+            if (!timeValue) return '';
+            const raw = String(timeValue).trim();
+            const match = raw.match(/^(\d{1,2}):(\d{2})/);
+            if (!match) return raw;
+            return `${match[1].padStart(2, '0')}:${match[2]}`;
+        }
+
+        function musicPartLabel(item) {
+            return item?.musical_parts?.display_name
+                || item?.instrument_part
+                || item?.concert_set
+                || 'Γενικό';
+        }
+
+        function assignmentLabels() {
+            const rows = (currentProfile?.assignments || []).filter(row => !row.concert_set);
+            if (!rows.length) return [];
+            return rows.map(row => {
+                const name = row.instruments?.name || 'Όργανο';
+                if (row.part_position) return `${name} ${row.part_position}`;
+                return name;
+            });
         }
 
         function getGreekVocativeName(name) {
@@ -598,6 +653,7 @@
 
         let activeTab = 'home';
         function switchTab(tab) {
+            if (tab !== 'music') musicTabShellReady = false;
             activeTab = tab;
             renderApp();
         }
@@ -661,7 +717,7 @@
                     <section class="bg-gradient-to-br from-indigo-700 to-indigo-900 p-4 rounded-2xl shadow-lg mb-4">
                         <p class="text-xs text-indigo-200 uppercase font-semibold">Επόμενη εκδήλωση</p>
                         <h2 class="text-xl font-bold text-white mt-1">${escapeHtml(nextEvent.event_name)}</h2>
-                        <p class="text-sm text-indigo-100 mt-2">📅 ${escapeHtml(formatGreekDateOnly(nextEvent.date))}${nextEvent.time ? ` · ${escapeHtml(nextEvent.time)}` : ''}</p>
+                        <p class="text-sm text-indigo-100 mt-2">📅 ${escapeHtml(formatGreekDateOnly(nextEvent.date))}${nextEvent.time ? ` · ${escapeHtml(formatEventTime(nextEvent.time))}` : ''}</p>
                         ${nextEvent.location ? `<p class="text-xs text-indigo-200 mt-1">📍 ${formatEventLocation(nextEvent.location)}</p>` : ''}
                         <button onclick="switchTab('events')" class="mt-3 bg-white/15 hover:bg-white/25 px-3 py-2 rounded-lg text-xs font-semibold text-white">Προβολή προγράμματος</button>
                     </section>
@@ -725,7 +781,7 @@
                                     <h3 class="font-bold text-base text-white">${escapeHtml(item.title)}</h3>
                                     <p class="text-xs text-slate-500 mt-1">${escapeHtml(date)}</p>
                                 </div>
-                                ${currentProfile?.role === 'admin' ? `<button onclick="deleteAnnouncement(${Number(item.id)})" class="shrink-0 text-red-400 hover:text-red-300 text-xs underline">Διαγραφή</button>` : ''}
+                                ${isPrivilegedRole() ? `<button onclick="deleteAnnouncement(${Number(item.id)})" class="shrink-0 text-red-400 hover:text-red-300 text-xs underline">Διαγραφή</button>` : ''}
                             </div>
                             <p class="text-sm text-slate-200 mt-3 whitespace-pre-wrap">${escapeHtml(item.body)}</p>
                         </article>
@@ -737,8 +793,8 @@
         }
 
         async function deleteAnnouncement(id) {
-            if (currentProfile?.role !== 'admin') {
-                alert('Μόνο οι διαχειριστές μπορούν να διαγράφουν ανακοινώσεις.');
+            if (!isPrivilegedRole()) {
+                alert('Μόνο οι διαχειριστές και ο μαέστρος μπορούν να διαγράφουν ανακοινώσεις.');
                 return;
             }
             const announcementId = Number(id);
@@ -763,109 +819,107 @@
         // --- MUSIC TAB ---
         async function renderMusicTab() {
             const content = document.getElementById('content');
-            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρτιτούρες</h2><p class="text-slate-400 text-sm">Φόρτωση βιβλιοθήκης...</p>`;
+            const keepShell = musicTabShellReady && document.getElementById('music-results');
+            if (!keepShell) {
+                content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρτιτούρες</h2><p class="text-slate-400 text-sm">Φόρτωση βιβλιοθήκης...</p>`;
+            }
 
-            const { data: music, error } = await supabaseClient.from('music_library').select('*');
+            const { data: music, error } = await supabaseClient
+                .from('music_library')
+                .select('id, piece_title, composer, concert_set, instrument_part, pdf_link, musical_part_id, musical_parts(display_name, part_position, is_beginner, instruments(name))');
 
             if (error) {
+                musicTabShellReady = false;
                 content.innerHTML = `<p class="text-red-400 text-sm">Σφάλμα φόρτωσης: ${error.message}</p>`;
                 return;
             }
 
-            const allInstruments = [...new Set((music || []).map(m => (m.instrument_part || '').trim()).filter(Boolean))].sort();
-            const allSets = [...new Set((music || []).map(m => (m.concert_set || '').trim()).filter(Boolean))].sort();
-            const myInstrument = (currentProfile?.instrument || '').trim();
-
-            let displayed = music || [];
-
-            if (musicFilter.myInstrumentOnly && myInstrument) {
-                displayed = displayed.filter(m => {
-                    const part = (m.instrument_part || '').trim().toLowerCase();
-                    const mi = myInstrument.toLowerCase();
-                    return part === mi || part.includes(mi) || mi.includes(part) || part.includes(mi.split(' ')[0]);
-                });
+            musicLibraryCache = music || [];
+            if (!keepShell) {
+                await buildMusicTabShell(content, musicLibraryCache);
+                musicTabShellReady = true;
             }
+            paintMusicResults();
+        }
 
-            if (musicFilter.instrument && musicFilter.instrument !== 'all') {
-                displayed = displayed.filter(m => (m.instrument_part || '').trim() === musicFilter.instrument);
+        function filteredMusicRows() {
+            const allSets = [...new Set(musicLibraryCache.map(m => (m.concert_set || '').trim()).filter(Boolean))].sort();
+            const partNames = [...new Set(musicLibraryCache.map(m => musicPartLabel(m)).filter(Boolean))].sort();
+            let displayed = musicLibraryCache.slice();
+
+            if (isPrivilegedRole() && musicFilter.instrument && musicFilter.instrument !== 'all') {
+                displayed = displayed.filter(m => musicPartLabel(m) === musicFilter.instrument);
             }
-
             if (musicFilter.set && musicFilter.set !== 'all') {
                 displayed = displayed.filter(m => (m.concert_set || '').trim() === musicFilter.set);
             }
-
             if (musicFilter.search && musicFilter.search.trim()) {
                 const q = musicFilter.search.trim().toLowerCase();
                 displayed = displayed.filter(m =>
                     (m.piece_title || '').toLowerCase().includes(q) ||
                     (m.composer || '').toLowerCase().includes(q) ||
-                    (m.instrument_part || '').toLowerCase().includes(q) ||
+                    musicPartLabel(m).toLowerCase().includes(q) ||
                     (m.concert_set || '').toLowerCase().includes(q)
                 );
             }
+            return { displayed, allSets, partNames };
+        }
+
+        async function buildMusicTabShell(content, music) {
+            const labels = assignmentLabels();
+            const instrumentLine = isConductorRole()
+                ? 'Μαέστρος'
+                : isAdminRole()
+                    ? 'Διαχειριστής'
+                    : (labels.join(', ') || 'Χωρίς ανάθεση οργάνου');
+            const { allSets, partNames } = filteredMusicRows();
 
             let html = `
                 <div class="flex items-center justify-between mb-3">
                     <div>
                         <h2 class="text-2xl font-bold">Παρτιτούρες</h2>
-                        <p class="text-xs text-indigo-300">Όργανο: <b>${escapeHtml(myInstrument || 'Μη ορισμένο')}</b></p>
+                        <p class="text-xs text-indigo-300">${escapeHtml(instrumentLine)}</p>
                     </div>
                 </div>
-
                 <div class="bg-slate-800 p-3 rounded-xl border border-slate-700 mb-3 space-y-2">
-                    <input type="text" id="mf-search" value="${musicFilter.search}" placeholder="🔍 Αναζήτηση τίτλου, συνθέτη..."
-                        class="w-full p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white"
-                        oninput="updateMusicFilter('search', this.value)">
+                    <input type="text" id="mf-search" value="${escapeHtml(musicFilter.search)}" placeholder="🔍 Αναζήτηση τίτλου, συνθέτη..."
+                        class="w-full p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
                     <div class="grid grid-cols-2 gap-2">
-                        <select id="mf-instrument" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white" onchange="updateMusicFilter('instrument', this.value)">
-                            <option value="all">Όλα τα όργανα (${allInstruments.length})</option>
-                            ${allInstruments.map(ins => `<option value="${escapeHtml(ins)}" ${musicFilter.instrument === ins ? 'selected':''}>${escapeHtml(ins)}</option>`).join('')}
+                        ${isPrivilegedRole() ? `
+                        <select id="mf-instrument" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white">
+                            <option value="all">Όλα τα μέρη (${partNames.length})</option>
+                            ${partNames.map(ins => `<option value="${escapeHtml(ins)}" ${musicFilter.instrument === ins ? 'selected':''}>${escapeHtml(ins)}</option>`).join('')}
                         </select>
-                        <select id="mf-set" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white" onchange="updateMusicFilter('set', this.value)">
+                        ` : '<div></div>'}
+                        <select id="mf-set" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white">
                             <option value="all">Όλα τα σετ (${allSets.length})</option>
                             ${allSets.map(s => `<option value="${escapeHtml(s)}" ${musicFilter.set === s ? 'selected':''}>${escapeHtml(s)}</option>`).join('')}
                         </select>
                     </div>
-                    ${myInstrument ? `
-                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
-                        <input type="checkbox" id="mf-myonly" ${musicFilter.myInstrumentOnly ? 'checked':''}
-                            onchange="updateMusicFilter('myInstrumentOnly', this.checked)" class="accent-indigo-600 w-4 h-4">
-                        <span>Εμφάνιση <b class="text-indigo-300">μόνο του οργάνου μου</b> (${escapeHtml(myInstrument)})</span>
-                    </label>
-                    ` : ''}
-                    <div class="text-[10px] text-slate-500 pt-0.5">${displayed.length} από ${(music||[]).length} παρτιτούρες</div>
+                    <div id="music-count" class="text-[10px] text-slate-500 pt-0.5"></div>
                 </div>
+                <div id="music-results"></div>
             `;
 
-            if (!displayed || displayed.length === 0) {
-                html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">${(music||[]).length === 0 ? 'Δεν υπάρχουν διαθέσιμες παρτιτούρες ακόμα.' : 'Καμία παρτιτούρα δεν ταιριάζει με τα φίλτρα σας.'}</div>`;
-            } else {
-                html += `<div class="space-y-3">`;
-                displayed.forEach(item => {
-                    const filePath = item.pdf_path || item.pdf_link;
-                    html += `
-                        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
-                            <div class="min-w-0">
-                                <h3 class="font-bold text-base text-white truncate">${escapeHtml(item.piece_title)}</h3>
-                                <p class="text-xs text-slate-400 truncate">${escapeHtml(item.composer || 'Άγνωστος Συνθέτης')} • ${escapeHtml(item.instrument_part || item.concert_set || 'Γενικό')}</p>
-                            </div>
-                            <div class="flex space-x-1.5 shrink-0 ml-2">
-                                ${filePath ? `<button onclick="openSecurePdf('${encodeURIComponent(filePath)}', ${Number(item.id)})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white whitespace-nowrap">Άνοιγμα & Σημειώσεις</button>` : ''}
-                            </div>
-                        </div>
-                    `;
-                });
-                html += `</div>`;
-            }
-
-            if (currentProfile?.role === 'admin') {
+            if (isAdminRole()) {
+                const { data: instruments } = await supabaseClient
+                    .from('instruments')
+                    .select('id, name, max_regular_parts, sort_order')
+                    .order('sort_order');
+                window.canonicalInstruments = instruments || [];
                 html += `
                     <div class="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
                         <h3 class="font-bold text-sm text-indigo-400 mb-3">Διαχειριστής: Προσθήκη Παρτιτούρας</h3>
                         <input type="text" id="m-title" placeholder="Τίτλος Κομματιού" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
                         <input type="text" id="m-composer" placeholder="Συνθέτης" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="m-set" placeholder="Σετ Συναυλίας (π.χ., Παρέλαση 28ης)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
-                        <input type="text" id="m-part" placeholder="Όργανο / Μέρος (π.χ., Φλάουτο 1)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <input type="text" id="m-set" placeholder="Σετ συναυλίας (υποχρεωτικό)" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                        <select id="m-instrument" class="w-full mb-2 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white" onchange="refreshAdminPartOptions()">
+                            <option value="">Επιλέξτε όργανο</option>
+                            ${(window.canonicalInstruments || []).map(ins => `<option value="${ins.id}" data-max="${ins.max_regular_parts}">${escapeHtml(ins.name)}</option>`).join('')}
+                        </select>
+                        <select id="m-part-kind" class="w-full mb-3 p-2.5 bg-slate-900 border border-slate-700 rounded text-sm text-white">
+                            <option value="unnumbered">Απλό μέρος (χωρίς αριθμό)</option>
+                        </select>
                         <div class="mb-3">
                             <label class="text-[10px] text-slate-400 block mb-1">Αρχείο PDF (Supabase Storage)</label>
                             <input type="file" id="m-file" accept="application/pdf" class="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500">
@@ -876,52 +930,144 @@
             }
 
             content.innerHTML = html;
+            const search = document.getElementById('mf-search');
+            if (search) {
+                search.addEventListener('input', (event) => {
+                    musicFilter.search = event.target.value;
+                    paintMusicResults();
+                });
+            }
+            const instrumentSelect = document.getElementById('mf-instrument');
+            if (instrumentSelect) {
+                instrumentSelect.addEventListener('change', (event) => {
+                    musicFilter.instrument = event.target.value;
+                    paintMusicResults();
+                });
+            }
+            const setSelect = document.getElementById('mf-set');
+            if (setSelect) {
+                setSelect.addEventListener('change', (event) => {
+                    musicFilter.set = event.target.value;
+                    paintMusicResults();
+                });
+            }
+            refreshAdminPartOptions();
         }
 
-        function updateMusicFilter(key, value) {
-            musicFilter[key] = value;
-            renderMusicTab();
+        function paintMusicResults() {
+            const results = document.getElementById('music-results');
+            const count = document.getElementById('music-count');
+            if (!results) return;
+            const { displayed } = filteredMusicRows();
+            if (count) count.textContent = `${displayed.length} από ${musicLibraryCache.length} παρτιτούρες`;
+
+            if (!displayed.length) {
+                results.innerHTML = `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">${musicLibraryCache.length === 0 ? 'Δεν υπάρχουν διαθέσιμες παρτιτούρες ακόμα.' : 'Καμία παρτιτούρα δεν ταιριάζει με τα φίλτρα σας.'}</div>`;
+                return;
+            }
+
+            results.innerHTML = `<div class="space-y-3">${displayed.map(item => {
+                const filePath = item.pdf_link;
+                return `
+                    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                        <div class="min-w-0">
+                            <h3 class="font-bold text-base text-white truncate">${escapeHtml(item.piece_title)}</h3>
+                            <p class="text-xs text-slate-400 truncate">${escapeHtml(item.composer || 'Άγνωστος Συνθέτης')} • ${escapeHtml(musicPartLabel(item))}</p>
+                        </div>
+                        <div class="flex space-x-1.5 shrink-0 ml-2">
+                            ${filePath ? `<button onclick="openSecurePdf('${encodeURIComponent(filePath)}', ${Number(item.id)})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white whitespace-nowrap">Άνοιγμα & Σημειώσεις</button>` : ''}
+                        </div>
+                    </div>`;
+            }).join('')}</div>`;
+        }
+
+        function refreshAdminPartOptions() {
+            const instrumentSelect = document.getElementById('m-instrument');
+            const partSelect = document.getElementById('m-part-kind');
+            if (!instrumentSelect || !partSelect) return;
+            const selected = (window.canonicalInstruments || []).find(ins => ins.id === instrumentSelect.value);
+            const maxParts = selected ? Number(selected.max_regular_parts) : 1;
+            const options = [['unnumbered', 'Απλό μέρος (χωρίς αριθμό)']];
+            if (maxParts >= 2) {
+                options.push(['1', 'Μέρος 1'], ['2', 'Μέρος 2']);
+            }
+            if (maxParts >= 3) options.push(['3', 'Μέρος 3']);
+            options.push(['beginner', 'Μέρος αρχαρίων']);
+            partSelect.innerHTML = options.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+        }
+
+        async function ensureMusicalPart(instrumentId, kind) {
+            const instrument = (window.canonicalInstruments || []).find(ins => ins.id === instrumentId);
+            if (!instrument) throw new Error('Άγνωστο όργανο.');
+            const isBeginner = kind === 'beginner';
+            const partPosition = kind === 'unnumbered' || isBeginner ? null : Number(kind);
+            const displayName = isBeginner
+                ? `${instrument.name} (beginner)`
+                : partPosition ? `${instrument.name} ${partPosition}` : instrument.name;
+
+            let query = supabaseClient
+                .from('musical_parts')
+                .select('id, display_name')
+                .eq('instrument_id', instrumentId)
+                .eq('is_beginner', isBeginner);
+            query = partPosition === null ? query.is('part_position', null) : query.eq('part_position', partPosition);
+            const { data: existing, error: lookupError } = await query.maybeSingle();
+            if (lookupError) throw lookupError;
+            if (existing) return existing;
+
+            const { data: created, error: insertError } = await supabaseClient
+                .from('musical_parts')
+                .insert([{ instrument_id: instrumentId, part_position: partPosition, is_beginner: isBeginner, display_name: displayName }])
+                .select('id, display_name')
+                .single();
+            if (insertError) throw insertError;
+            return created;
         }
 
         async function addMusic() {
-            const piece_title = document.getElementById('m-title').value;
-            const composer = document.getElementById('m-composer').value;
-            const concert_set = document.getElementById('m-set').value;
-            const instrument_part = document.getElementById('m-part').value;
+            if (!isAdminRole()) {
+                alert('Μόνο οι διαχειριστές μπορούν να μεταφορτώνουν παρτιτούρες.');
+                return;
+            }
+            const piece_title = document.getElementById('m-title').value.trim();
+            const composer = document.getElementById('m-composer').value.trim();
+            const concert_set = document.getElementById('m-set').value.trim();
+            const instrumentId = document.getElementById('m-instrument').value;
+            const partKind = document.getElementById('m-part-kind').value;
             const fileInput = document.getElementById('m-file');
 
-            if (!piece_title || !fileInput.files || fileInput.files.length === 0) {
-                alert('Παρακαλώ συμπληρώστε τίτλο και επιλέξτε αρχείο PDF.');
+            if (!piece_title || !concert_set || !instrumentId || !fileInput.files || fileInput.files.length === 0) {
+                alert('Παρακαλώ συμπληρώστε τίτλο, σετ, όργανο και αρχείο PDF.');
                 return;
             }
 
-            const file = fileInput.files[0];
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
-            const filePath = `scores/${fileName}`;
+            try {
+                const part = await ensureMusicalPart(instrumentId, partKind);
+                const file = fileInput.files[0];
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+                const filePath = `scores/${fileName}`;
 
-            const { error: uploadError } = await supabaseClient.storage
-                .from('sheet-music')
-                .upload(filePath, file);
+                const { error: uploadError } = await supabaseClient.storage
+                    .from('sheet-music')
+                    .upload(filePath, file);
+                if (uploadError) throw uploadError;
 
-            if (uploadError) {
-                alert('Σφάλμα μεταφόρτωσης αρχείου: ' + uploadError.message);
-                return;
-            }
+                const { error: dbError } = await supabaseClient.from('music_library').insert([{
+                    piece_title,
+                    composer,
+                    concert_set,
+                    instrument_part: part.display_name,
+                    pdf_link: filePath,
+                    musical_part_id: part.id
+                }]);
+                if (dbError) throw dbError;
 
-            const { error: dbError } = await supabaseClient.from('music_library').insert([{ 
-                piece_title, 
-                composer, 
-                concert_set, 
-                instrument_part, 
-                pdf_path: filePath 
-            }]);
-
-            if (dbError) {
-                alert('Σφάλμα αποθήκευσης στη βάση: ' + dbError.message);
-            } else {
+                musicTabShellReady = false;
                 alert('Η παρτιτούρα μεταφορτώθηκε επιτυχώς!');
                 renderMusicTab();
+            } catch (error) {
+                alert('Σφάλμα αποθήκευσης: ' + error.message);
             }
         }
 
@@ -937,6 +1083,47 @@
             }
 
             openPdfViewer(data.signedUrl, pieceId);
+        }
+
+        async function requestPdfWakeLock() {
+            try {
+                if (pdfWakeLock) return;
+                if (!('wakeLock' in navigator)) return;
+                pdfWakeLock = await navigator.wakeLock.request('screen');
+                pdfWakeLock.addEventListener('release', () => { pdfWakeLock = null; });
+            } catch (error) {
+                pdfWakeLock = null;
+            }
+        }
+
+        async function releasePdfWakeLock() {
+            try {
+                await pdfWakeLock?.release();
+            } catch (error) {
+                /* ignore */
+            }
+            pdfWakeLock = null;
+        }
+
+        function confirmDiscardAnnotations() {
+            return new Promise((resolve) => {
+                const existing = document.getElementById('annotation-exit-dialog');
+                if (existing) existing.remove();
+                const dialog = document.createElement('div');
+                dialog.id = 'annotation-exit-dialog';
+                dialog.className = 'fixed inset-0 z-[10000] bg-black/60 flex items-end sm:items-center justify-center p-4';
+                dialog.innerHTML = `
+                    <div class="bg-slate-800 border border-slate-600 rounded-2xl p-4 w-full max-w-sm">
+                        <p class="text-sm text-slate-100 mb-4">Έχετε μη αποθηκευμένες σημειώσεις. Θέλετε να τις αποθηκεύσετε πριν κλείσετε την παρτιτούρα;</p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button id="ann-exit-no" class="py-2.5 rounded-lg bg-slate-700 text-white text-sm font-semibold">Όχι</button>
+                            <button id="ann-exit-yes" class="py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold">Ναι</button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(dialog);
+                dialog.querySelector('#ann-exit-no').onclick = () => { dialog.remove(); resolve(false); };
+                dialog.querySelector('#ann-exit-yes').onclick = () => { dialog.remove(); resolve(true); };
+            });
         }
 
         async function openPdfViewer(pdfUrl, pieceId) {
@@ -966,6 +1153,7 @@
             setupDrawingEvents();
             setupScoreGestures();
             setTool('hand');
+            requestPdfWakeLock();
 
             try {
                 const loadingTask = pdfjsLib.getDocument(pdfUrl);
@@ -978,10 +1166,10 @@
             }
         }
 
-        function closePdfViewer(fromHistory = false) {
+        async function closePdfViewer(fromHistory = false) {
             if (!fromHistory && viewerHistoryActive) {
                 if (annotationsDirty) {
-                    const shouldSave = confirm('Έχετε μη αποθηκευμένες σημειώσεις. Θέλετε να τις αποθηκεύσετε πριν κλείσετε την παρτιτούρα;');
+                    const shouldSave = await confirmDiscardAnnotations();
                     if (shouldSave) persistAnnotations();
                     else annotationsDirty = false;
                 }
@@ -991,9 +1179,10 @@
                 return;
             }
             if (annotationsDirty) {
-                const shouldSave = confirm('Έχετε μη αποθηκευμένες σημειώσεις. Θέλετε να τις αποθηκεύσετε πριν κλείσετε την παρτιτούρα;');
+                const shouldSave = await confirmDiscardAnnotations();
                 if (shouldSave) persistAnnotations();
             }
+            await releasePdfWakeLock();
             document.getElementById('pdf-viewer-container').classList.add('hidden');
             pdfDoc = null;
             pageNum = 1;
@@ -1594,12 +1783,12 @@
         // --- EVENTS TAB ---
         async function renderEventsTab() {
             const content = document.getElementById('content');
-            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
+            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Πρόγραμμα</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
 
             const { data: events, error: eventError } = await supabaseClient.from('band_events').select('*').order('date', { ascending: true }).order('time', { ascending: true, nullsFirst: false }).order('id', { ascending: true });
             
             if (eventError) {
-                content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Εκδηλώσεις</h2><p class="text-red-400 text-sm">Σφάλμα φόρτωσης εκδηλώσεων: ${eventError.message}</p>`;
+                content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Πρόγραμμα</h2><p class="text-red-400 text-sm">Σφάλμα φόρτωσης εκδηλώσεων: ${eventError.message}</p>`;
                 return;
             }
             sortEventsChronologically(events);
@@ -1640,30 +1829,24 @@
             if (!displayedEvents || displayedEvents.length === 0) {
                 html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν προγραμματισμένες εκδηλώσεις.</div>`;
             } else {
-                html += `<div class="space-y-4">`;
-                displayedEvents.forEach(ev => {
+                const upcoming = selectedCalendarDate ? displayedEvents : displayedEvents.filter(ev => !isPastEvent(ev));
+                const past = selectedCalendarDate ? [] : displayedEvents.filter(ev => isPastEvent(ev));
+                const renderEventCards = (list) => list.map(ev => {
                     const myResp = responses?.find(r => r.event_id === ev.id);
                     const myStatus = myResp ? myResp.status : null;
-
                     const formattedDate = formatGreekDateOnly(ev.date);
-                    const dateTimeDisplay = ev.time ? `${formattedDate}, ${escapeHtml(ev.time)}` : `${formattedDate} (Ώρα αναμένεται)`;
-
+                    const dateTimeDisplay = ev.time ? `${formattedDate}, ${escapeHtml(formatEventTime(ev.time))}` : `${formattedDate} (Ώρα αναμένεται)`;
                     let locationHtml = escapeHtml(ev.location || 'Θα ανακοινωθεί');
                     if (ev.location && ev.location.includes('|')) {
                         const parts = ev.location.split('|');
-                        const locName = parts[0].trim();
-                        const locUrl = parts[1].trim();
-                        locationHtml = `<a href="${safeExternalUrl(locUrl)}" rel="noopener noreferrer" target="_blank" class="text-indigo-400 hover:underline font-medium inline-flex items-center">${escapeHtml(locName)}</a>`;
+                        locationHtml = `<a href="${safeExternalUrl(parts[1].trim())}" rel="noopener noreferrer" target="_blank" class="text-indigo-400 hover:underline font-medium inline-flex items-center">${escapeHtml(parts[0].trim())}</a>`;
                     } else if (ev.location && (ev.location.startsWith('http://') || ev.location.startsWith('https://'))) {
                         locationHtml = `<a href="${safeExternalUrl(ev.location)}" rel="noopener noreferrer" target="_blank" class="text-indigo-400 hover:underline">Χάρτης</a>`;
                     }
-
-                    const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${escapeHtml(ev.event_type)}</span>` : '';
-
+                    const typeBadge = ev.event_type ? `<span class="shrink-0 max-w-[42%] text-right bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-semibold whitespace-pre-line leading-tight">${escapeHtml(ev.event_type)}</span>` : '';
                     let goingBtnClass = "px-3 py-1.5 rounded text-xs font-semibold transition ";
                     let notGoingBtnClass = "px-3 py-1.5 rounded text-xs font-semibold transition ";
                     let statusLabel = '<span class="text-slate-400">Κατάσταση: <b class="text-slate-300">Χωρίς απάντηση</b></span>';
-
                     if (myStatus === 'Going') {
                         goingBtnClass += "bg-emerald-600 text-white ring-2 ring-white shadow-md font-bold";
                         notGoingBtnClass += "bg-slate-800 text-slate-500 border border-slate-700 opacity-40 hover:opacity-100";
@@ -1676,17 +1859,15 @@
                         goingBtnClass += "bg-emerald-600 hover:bg-emerald-500 text-white";
                         notGoingBtnClass += "bg-red-600 hover:bg-red-500 text-white";
                     }
-
-                    html += `
+                    return `
                         <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                            <div class="flex justify-between items-start mb-1">
+                            <div class="flex justify-between items-start mb-1 gap-2">
                                 <h3 class="font-bold text-base text-white">${escapeHtml(ev.event_name)}</h3>
                                 ${typeBadge}
                             </div>
                             <p class="text-xs text-indigo-300 mb-1">📅 ${dateTimeDisplay}</p>
                             <p class="text-xs text-slate-400 mb-2">📍 ${locationHtml} | 👔 Ενδυμασία: ${escapeHtml(ev.dress_code || 'Καθημερινή')}</p>
-                            ${ev.notes ? `<p class="text-xs bg-slate-900 p-2.5 rounded mb-3 text-slate-300">${escapeHtml(ev.notes)}</p>` : ''}
-                            
+                            ${ev.notes ? `<p class="text-xs bg-slate-900 p-2.5 rounded mb-3 text-slate-300 whitespace-pre-wrap">${escapeHtml(ev.notes)}</p>` : ''}
                             <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between border-t border-slate-700 pt-3 gap-2">
                                 <div class="text-xs">${statusLabel}</div>
                                 <div class="space-x-1.5 self-end sm:self-auto">
@@ -1694,13 +1875,19 @@
                                     <button onclick="rsvp(${ev.id}, 'Not Going')" class="${notGoingBtnClass}">Δεν μπορώ</button>
                                 </div>
                             </div>
-                        </div>
-                    `;
-                });
-                html += `</div>`;
+                        </div>`;
+                }).join('');
+
+                if (!upcoming.length && !past.length) {
+                    html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν προγραμματισμένες εκδηλώσεις.</div>`;
+                }
+                if (upcoming.length) html += `<div class="space-y-4">${renderEventCards(upcoming)}</div>`;
+                if (past.length) {
+                    html += `<details class="mt-6 bg-slate-800/40 rounded-xl border border-slate-700"><summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-300">Προηγούμενες εκδηλώσεις (${past.length})</summary><div class="space-y-4 p-4 pt-0">${renderEventCards(past)}</div></details>`;
+                }
             }
 
-            if (currentProfile?.role === 'admin') {
+            if (isAdminRole()) {
                 html += `
                     <div class="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
                         <h3 class="font-bold text-sm text-indigo-400 mb-3">Διαχειριστής: Νέα Εκδήλωση</h3>
@@ -1740,7 +1927,7 @@
             }
             sortEventsChronologically(events);
 
-            const isAdmin = currentProfile?.role === 'admin';
+            const isAdmin = isPrivilegedRole();
 
             let html = `
                 <div class="flex items-center justify-between mb-1">
@@ -1749,7 +1936,8 @@
             `;
             
             if (isAdmin) {
-                html += `<p class="text-xs text-slate-400 mb-2">Συγκεντρωτική κατάσταση συμμετοχών για όλους τους μουσικούς (Admin View).</p>`;
+                html += `<p class="text-xs text-slate-400 mb-2">Συγκεντρωτική κατάσταση συμμετοχών για όλους τους μουσικούς.</p>
+                <button onclick="exportAttendanceWorkbook()" class="mb-3 w-full bg-emerald-700 hover:bg-emerald-600 text-white py-2 rounded-lg text-xs font-semibold">Εξαγωγή παρουσιών (XLSX)</button>`;
 
                 const vapidOK = !!urlB64ToUint8Array(VAPID_PUBLIC_KEY);
                 const edgeFnOK = !!(PUSH_EDGE_FUNCTION_URL && PUSH_EDGE_FUNCTION_URL.length > 20);
@@ -1822,8 +2010,8 @@
                         }
 
                         const formattedDate = formatGreekDateOnly(ev.date);
-                        const dateTimeDisplay = ev.time ? `${formattedDate}, ${escapeHtml(ev.time)}` : `${formattedDate} (Ώρα αναμένεται)`;
-                        const typeBadge = ev.event_type ? `<span class="bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">${escapeHtml(ev.event_type)}</span>` : '';
+                        const dateTimeDisplay = ev.time ? `${formattedDate}, ${escapeHtml(formatEventTime(ev.time))}` : `${formattedDate} (Ώρα αναμένεται)`;
+                        const typeBadge = ev.event_type ? `<span class="shrink-0 max-w-[42%] text-right bg-slate-700 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-semibold whitespace-pre-line leading-tight">${escapeHtml(ev.event_type)}</span>` : '';
 
                         html += `
                             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
@@ -1978,7 +2166,9 @@
         function sortEventsChronologically(events) {
             if (!Array.isArray(events)) return;
             events.sort((a, b) => {
-                const dateCompare = String(a.date || '').localeCompare(String(b.date || ''));
+                const dateA = a.date ? String(a.date).split('T')[0] : '9999-12-31';
+                const dateB = b.date ? String(b.date).split('T')[0] : '9999-12-31';
+                const dateCompare = dateA.localeCompare(dateB);
                 if (dateCompare !== 0) return dateCompare;
                 const timeA = a.time ? String(a.time) : '99:99';
                 const timeB = b.time ? String(b.time) : '99:99';
@@ -1986,6 +2176,13 @@
                 if (timeCompare !== 0) return timeCompare;
                 return Number(a.id || 0) - Number(b.id || 0);
             });
+        }
+
+        function isPastEvent(ev) {
+            if (!ev?.date) return false;
+            const today = new Date();
+            const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+            return String(ev.date).split('T')[0] < todayStr;
         }
 
         function renderCalendarGrid(events) {
@@ -2091,11 +2288,19 @@
             if (error) {
                 alert(`Σφάλμα αποθήκευσης παρουσίας:\n${error.message}\n\nΚωδικός: ${error.code || '—'}`);
             } else {
+                const scrollY = document.getElementById('content')?.scrollTop || window.scrollY;
                 await renderEventsTab();
+                const contentEl = document.getElementById('content');
+                if (contentEl) contentEl.scrollTop = scrollY;
+                else window.scrollTo(0, scrollY);
             }
         }
 
         async function addEvent() {
+            if (!isAdminRole()) {
+                alert('Μόνο οι διαχειριστές μπορούν να δημιουργούν εκδηλώσεις.');
+                return;
+            }
             const event_name = document.getElementById('e-name').value;
             const event_type = document.getElementById('e-type').value;
             const date = document.getElementById('e-date').value;
@@ -2153,7 +2358,7 @@
 
                 if (saveErr) throw saveErr;
 
-                alert('✅ Επιτυχής ενεργοποίηση ειδοποιήσεων!\n\nΣημείωση: Για την αποστολή κοινοποιήσεων, ο διαχειριστής τρέχει το push_notifications/send_push_notification.js.');
+                showAppToast('Επιτυχής ενεργοποίηση ειδοποιήσεων.');
                 renderProfileTab();
             } catch (e) {
                 console.error(e);
@@ -2174,7 +2379,7 @@
                     if (delErr) console.warn('DB delete warning:', delErr);
                 }
                 pushSubscription = null;
-                alert('Οι ειδοποιήσεις απενεργοποιήθηκαν.');
+                showAppToast('Οι ειδοποιήσεις απενεργοποιήθηκαν.');
                 renderProfileTab();
             } catch (e) {
                 alert('Σφάλμα απενεργοποίησης: ' + e.message);
@@ -2182,6 +2387,10 @@
         }
 
         async function sendAdminAnnouncementDirect() {
+            if (!isPrivilegedRole()) {
+                alert('Μόνο οι διαχειριστές και ο μαέστρος μπορούν να στείλουν ειδοποιήσεις.');
+                return;
+            }
             const titleEl = document.getElementById('push-title');
             const bodyEl  = document.getElementById('push-body');
             const title = (titleEl.value || '').trim();
@@ -2294,13 +2503,66 @@
             URL.revokeObjectURL(url);
         }
 
+        function showAppToast(message) {
+            const existing = document.getElementById('app-toast');
+            if (existing) existing.remove();
+            const toast = document.createElement('div');
+            toast.id = 'app-toast';
+            toast.className = 'fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center p-4';
+            toast.innerHTML = `
+                <div class="bg-slate-800 border border-emerald-700/60 rounded-2xl p-5 w-full max-w-sm text-center">
+                    <div class="text-3xl mb-2">✅</div>
+                    <p class="text-sm text-slate-100 mb-4">${escapeHtml(message)}</p>
+                    <button class="w-full py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold" onclick="document.getElementById('app-toast')?.remove()">Κλείσιμο</button>
+                </div>`;
+            document.body.appendChild(toast);
+        }
+
+        async function exportAttendanceWorkbook() {
+            if (!isPrivilegedRole()) return;
+            const [{ data: events }, { data: profiles }, { data: responses }] = await Promise.all([
+                supabaseClient.from('band_events').select('id, event_name, event_type, date, time'),
+                supabaseClient.from('profiles').select('email, first_name, last_name, instrument, role'),
+                supabaseClient.from('event_responses').select('event_id, user_email, status, excuse')
+            ]);
+            const rows = [['Εκδήλωση', 'Ημερομηνία', 'Ώρα', 'Μουσικός', 'Όργανο', 'Κατάσταση', 'Αιτιολογία']];
+            (events || []).forEach(ev => {
+                (responses || []).filter(r => r.event_id === ev.id).forEach(r => {
+                    const profile = (profiles || []).find(p => String(p.email || '').trim().toLowerCase() === String(r.user_email || '').trim().toLowerCase());
+                    rows.push([
+                        ev.event_name || '',
+                        ev.date ? String(ev.date).split('T')[0] : '',
+                        formatEventTime(ev.time),
+                        `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || r.user_email,
+                        profile?.instrument || '',
+                        r.status || '',
+                        r.excuse || ''
+                    ]);
+                });
+            });
+            const csv = rows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+            const file = new File([blob], 'parousies.csv', { type: blob.type });
+            if (navigator.share && navigator.canShare?.({ files: [file] })) {
+                await navigator.share({ files: [file], title: 'Παρουσίες' });
+                return;
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'parousies.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
         function renderProfileTab() {
             const content = document.getElementById('content');
-            let roleDisplay = currentProfile?.role === 'admin' ? 'Διαχειριστής' : 'Μουσικός';
+            const roleDisplay = isAdminRole() ? 'Διαχειριστής' : (isConductorRole() ? 'Μαέστρος' : 'Μουσικός');
             
             const firstName = currentProfile?.first_name || currentProfile?.name || '';
             const lastName = currentProfile?.last_name || '';
-            const instrument = currentProfile?.instrument || 'Μη ορισμένο';
+            const instrument = assignmentLabels().join(', ')
+                || (isConductorRole() ? '—' : (currentProfile?.instrument || 'Μη ορισμένο'));
 
             const pushSupported = ('serviceWorker' in navigator) && ('PushManager' in window);
             const pushActive = !!pushSubscription;
