@@ -504,7 +504,7 @@
                 let assignments = [];
                 const withNames = await supabaseClient
                     .from('user_instruments')
-                    .select('instrument_id, part_position, concert_set, instruments(name)')
+                    .select('instrument_id, part_position, concert_set, instruments(name, is_section, is_percussion)')
                     .eq('user_id', currentProfile.id);
                 if (!withNames.error) {
                     assignments = withNames.data || [];
@@ -540,6 +540,17 @@
 
         function isPrivilegedRole() {
             return isAdminRole() || isConductorRole();
+        }
+
+        function hasPercussionAllAssignment() {
+            return (currentProfile?.assignments || []).some(row => {
+                const rel = Array.isArray(row.instruments) ? row.instruments[0] : row.instruments;
+                return rel?.name === 'Percussion (all)' || rel?.is_section === true;
+            });
+        }
+
+        function canFilterMusicInstruments() {
+            return isPrivilegedRole() || hasPercussionAllAssignment();
         }
 
         function formatEventTime(timeValue) {
@@ -880,7 +891,7 @@
             const partNames = [...new Set(pool.map(m => musicPartLabel(m)).filter(Boolean))].sort();
             let displayed = pool.slice();
 
-            if (isPrivilegedRole() && musicFilter.instrument && musicFilter.instrument !== 'all') {
+            if (canFilterMusicInstruments() && musicFilter.instrument && musicFilter.instrument !== 'all') {
                 displayed = displayed.filter(m => musicPartLabel(m) === musicFilter.instrument);
             }
             if (musicFilter.set && musicFilter.set !== 'all') {
@@ -918,10 +929,10 @@
                     <input type="text" id="mf-search" value="${escapeHtml(musicFilter.search)}" placeholder="🔍 Αναζήτηση τίτλου, συνθέτη..."
                         class="w-full p-2 bg-slate-900 border border-slate-700 rounded text-sm text-white">
                     <div class="grid grid-cols-2 gap-2">
-                        ${isPrivilegedRole() ? `
+                        ${canFilterMusicInstruments() ? `
                         <select id="mf-instrument" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white">
-                            <option value="all">Όλα τα μέρη (${partNames.length})</option>
-                            ${partNames.map(ins => `<option value="${escapeHtml(ins)}" ${musicFilter.instrument === ins ? 'selected':''}>${escapeHtml(ins)}</option>`).join('')}
+                            <option value="all">${hasPercussionAllAssignment() && !isPrivilegedRole() ? 'Percussion (all)' : `Όλα τα μέρη (${partNames.length})`}</option>
+                            ${partNames.filter(ins => !(hasPercussionAllAssignment() && !isPrivilegedRole() && ins === 'Percussion (all)')).map(ins => `<option value="${escapeHtml(ins)}" ${musicFilter.instrument === ins ? 'selected':''}>${escapeHtml(ins)}</option>`).join('')}
                         </select>
                         ` : '<div></div>'}
                         <select id="mf-set" class="p-2 bg-slate-900 border border-slate-700 rounded text-xs text-white">
@@ -1008,7 +1019,7 @@
                             <p class="text-xs text-slate-400 truncate">${escapeHtml(item.composer || 'Άγνωστος Συνθέτης')} • ${escapeHtml(musicPartLabel(item))}</p>
                         </div>
                         <div class="flex space-x-1.5 shrink-0 ml-2">
-                            ${filePath ? `<button onclick="openSecurePdf('${encodeURIComponent(filePath)}', ${Number(item.id)})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white whitespace-nowrap">Άνοιγμα & Σημειώσεις</button>` : ''}
+                            ${filePath ? `<button onclick="openSecurePdf('${encodeURIComponent(filePath)}', ${Number(item.id)})" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-2 rounded-lg text-xs font-semibold transition text-white whitespace-nowrap">Άνοιγμα</button>` : ''}
                         </div>
                     </div>`;
             }).join('')}</div>`;
