@@ -83,8 +83,8 @@
         .page-indicator {
             opacity: 0;
             pointer-events: none;
-            background: rgba(51, 65, 85, 0.94);
-            border-color: rgba(148, 163, 184, 0.7);
+            background: rgba(15, 23, 42, 0.7);
+            border-color: rgba(71, 85, 105, 0.85);
             transition: opacity 180ms ease;
         }
         .page-indicator.visible {
@@ -113,9 +113,9 @@
         .viewer-float {
             position: absolute;
             z-index: 2;
-            background: rgba(15, 23, 42, 0.9);
-            border: 1px solid rgba(51, 65, 85, 0.9);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(71, 85, 105, 0.85);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
         }
         .annotation-island {
             position: absolute;
@@ -501,11 +501,30 @@
             }
 
             if (currentProfile?.id) {
-                const { data: assignments, error: assignmentError } = await supabaseClient
+                let assignments = [];
+                const withNames = await supabaseClient
                     .from('user_instruments')
                     .select('instrument_id, part_position, concert_set, instruments(name)')
                     .eq('user_id', currentProfile.id);
-                currentProfile.assignments = assignmentError ? [] : (assignments || []);
+                if (!withNames.error) {
+                    assignments = withNames.data || [];
+                } else {
+                    const plain = await supabaseClient
+                        .from('user_instruments')
+                        .select('instrument_id, part_position, concert_set')
+                        .eq('user_id', currentProfile.id);
+                    assignments = plain.error ? [] : (plain.data || []);
+                    const ids = [...new Set(assignments.map(row => row.instrument_id).filter(Boolean))];
+                    if (ids.length) {
+                        const named = await supabaseClient.from('instruments').select('id, name').in('id', ids);
+                        const byId = Object.fromEntries((named.data || []).map(row => [row.id, row.name]));
+                        assignments = assignments.map(row => ({
+                            ...row,
+                            instruments: byId[row.instrument_id] ? { name: byId[row.instrument_id] } : row.instruments
+                        }));
+                    }
+                }
+                currentProfile.assignments = assignments;
             } else {
                 currentProfile.assignments = [];
             }
@@ -531,39 +550,25 @@
             return `${match[1].padStart(2, '0')}:${match[2]}`;
         }
 
+        function relationName(rel) {
+            if (!rel) return '';
+            if (Array.isArray(rel)) return rel[0]?.name || '';
+            return rel.name || '';
+        }
+
         function musicPartLabel(item) {
-            return item?.musical_parts?.instruments?.name
+            return relationName(item?.musical_parts?.instruments)
                 || item?.musical_parts?.display_name
                 || item?.instrument_part
                 || item?.concert_set
                 || 'Γενικό';
         }
 
-        function musicianCanSeeMusicRow(item) {
-            if (isPrivilegedRole()) return true;
-            const assignedIds = (currentProfile?.assignments || [])
-                .map(row => String(row.instrument_id || ''))
-                .filter(Boolean);
-            const partInstrumentId = item?.musical_parts?.instrument_id;
-            if (partInstrumentId && assignedIds.includes(String(partInstrumentId))) return true;
-            const assignedNames = (currentProfile?.assignments || [])
-                .map(row => row.instruments?.name)
-                .filter(Boolean);
-            const partName = item?.musical_parts?.instruments?.name;
-            if (partName && assignedNames.includes(partName)) return true;
-            const legacy = (item?.instrument_part || '').trim();
-            if (legacy && assignedNames.includes(legacy)) return true;
-            if (assignedNames.includes('Percussion (all)') && ['Κρουστά', 'Percussion', 'Percussion (all)'].includes(legacy)) {
-                return true;
-            }
-            return false;
-        }
-
         function assignmentLabels() {
             const rows = (currentProfile?.assignments || []).filter(row => !row.concert_set);
             if (!rows.length) return [];
             return rows.map(row => {
-                const name = row.instruments?.name || 'Όργανο';
+                const name = relationName(row.instruments) || 'Όργανο';
                 if (row.part_position) return `${name} ${row.part_position}`;
                 return name;
             });
@@ -845,15 +850,21 @@
                 content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Παρτιτούρες</h2><p class="text-slate-400 text-sm">Φόρτωση βιβλιοθήκης...</p>`;
             }
 
-            const { data: music, error } = await supabaseClient
+            let musicQuery = await supabaseClient
                 .from('music_library')
                 .select('id, piece_title, composer, concert_set, instrument_part, pdf_link, musical_part_id, musical_parts(display_name, part_position, is_beginner, instrument_id, instruments(name))');
+            if (musicQuery.error) {
+                musicQuery = await supabaseClient
+                    .from('music_library')
+                    .select('id, piece_title, composer, concert_set, instrument_part, pdf_link, musical_part_id, musical_parts(display_name, part_position, is_beginner, instrument_id)');
+            }
 
-            if (error) {
+            if (musicQuery.error) {
                 musicTabShellReady = false;
-                content.innerHTML = `<p class="text-red-400 text-sm">Σφάλμα φόρτωσης: ${error.message}</p>`;
+                content.innerHTML = `<p class="text-red-400 text-sm">Σφάλμα φόρτωσης: ${musicQuery.error.message}</p>`;
                 return;
             }
+            const music = musicQuery.data;
 
             musicLibraryCache = music || [];
             if (!keepShell) {
@@ -864,9 +875,7 @@
         }
 
         function filteredMusicRows() {
-            const pool = isPrivilegedRole()
-                ? musicLibraryCache.slice()
-                : musicLibraryCache.filter(musicianCanSeeMusicRow);
+            const pool = musicLibraryCache.slice();
             const allSets = [...new Set(pool.map(m => (m.concert_set || '').trim()).filter(Boolean))].sort();
             const partNames = [...new Set(pool.map(m => musicPartLabel(m)).filter(Boolean))].sort();
             let displayed = pool.slice();
