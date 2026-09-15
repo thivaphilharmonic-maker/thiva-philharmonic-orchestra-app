@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'thiva-philharmonic-v19';
+const CACHE_VERSION = 'thiva-philharmonic-v21';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PDF_CACHE = `${CACHE_VERSION}-pdfs`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
