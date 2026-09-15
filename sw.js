@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'thiva-philharmonic-v16';
+const CACHE_VERSION = 'thiva-philharmonic-v17';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PDF_CACHE = `${CACHE_VERSION}-pdfs`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
@@ -107,14 +107,16 @@ self.addEventListener('push', (event) => {
 
     const options = {
         body: data.body,
-        icon: './thiva_app_icon.png',
-        badge: './thiva_app_icon.png',
+        icon: data.icon || `${self.registration.scope}thiva_app_icon.png`,
+        badge: data.badge || `${self.registration.scope}thiva_app_icon.png`,
         vibrate: [200, 100, 200],
         tag: data.tag || 'thiva-philharmonic-notification',
-        data: data.data || {}
+        data: data.data || {},
+        silent: false
     };
 
-    event.waitUntil(self.registration.showNotification(data.title, options));
+    const title = data.title || 'Φιλαρμονική Ορχήστρα Θήβας';
+    event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
