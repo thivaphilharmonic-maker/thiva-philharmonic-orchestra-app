@@ -500,27 +500,30 @@
                 currentProfile = { email: currentUser.email, role: 'musician', instrument: 'Μη ορισμένο' };
             }
 
-            if (currentProfile?.id) {
+            if (currentProfile?.id || currentUser?.id) {
+                const userIds = [...new Set([currentProfile?.id, currentUser?.id].filter(Boolean))];
                 let assignments = [];
                 const withNames = await supabaseClient
                     .from('user_instruments')
                     .select('instrument_id, part_position, concert_set, instruments(name, is_section, is_percussion)')
-                    .eq('user_id', currentProfile.id);
+                    .in('user_id', userIds);
                 if (!withNames.error) {
                     assignments = withNames.data || [];
                 } else {
                     const plain = await supabaseClient
                         .from('user_instruments')
                         .select('instrument_id, part_position, concert_set')
-                        .eq('user_id', currentProfile.id);
+                        .in('user_id', userIds);
                     assignments = plain.error ? [] : (plain.data || []);
                     const ids = [...new Set(assignments.map(row => row.instrument_id).filter(Boolean))];
                     if (ids.length) {
-                        const named = await supabaseClient.from('instruments').select('id, name').in('id', ids);
-                        const byId = Object.fromEntries((named.data || []).map(row => [row.id, row.name]));
+                        const named = await supabaseClient.from('instruments').select('id, name, is_section, is_percussion').in('id', ids);
+                        const byId = Object.fromEntries((named.data || []).map(row => [row.id, row]));
                         assignments = assignments.map(row => ({
                             ...row,
-                            instruments: byId[row.instrument_id] ? { name: byId[row.instrument_id] } : row.instruments
+                            instruments: byId[row.instrument_id]
+                                ? { name: byId[row.instrument_id].name, is_section: byId[row.instrument_id].is_section, is_percussion: byId[row.instrument_id].is_percussion }
+                                : row.instruments
                         }));
                     }
                 }
@@ -542,11 +545,19 @@
             return isAdminRole() || isConductorRole();
         }
 
+        function legacyAssignmentLabel() {
+            const legacy = (currentProfile?.instrument || '').trim();
+            if (legacy === 'Κρουστά' || legacy === 'Percussion' || legacy === 'Percussion (all)') return 'Percussion (all)';
+            if (legacy && legacy !== 'Μαέστρος' && legacy !== 'Μη ορισμένο') return legacy;
+            return '';
+        }
+
         function hasPercussionAllAssignment() {
-            return (currentProfile?.assignments || []).some(row => {
+            if ((currentProfile?.assignments || []).some(row => {
                 const rel = Array.isArray(row.instruments) ? row.instruments[0] : row.instruments;
                 return rel?.name === 'Percussion (all)' || rel?.is_section === true;
-            });
+            })) return true;
+            return legacyAssignmentLabel() === 'Percussion (all)';
         }
 
         function canFilterMusicInstruments() {
@@ -568,16 +579,23 @@
         }
 
         function musicPartLabel(item) {
-            return relationName(item?.musical_parts?.instruments)
-                || item?.musical_parts?.display_name
-                || item?.instrument_part
-                || item?.concert_set
-                || 'Γενικό';
+            return relationName(item?.musical_parts?.instruments) === 'Percussion (all)'
+                ? 'Percussion'
+                : (relationName(item?.musical_parts?.instruments)
+                    || item?.musical_parts?.display_name
+                    || item?.instrument_part
+                    || item?.concert_set
+                    || 'Γενικό');
         }
 
         function assignmentLabels() {
-            const rows = (currentProfile?.assignments || []).filter(row => !row.concert_set);
-            if (!rows.length) return [];
+            const all = currentProfile?.assignments || [];
+            const general = all.filter(row => !row.concert_set);
+            const rows = general.length ? general : all;
+            if (!rows.length) {
+                const legacy = legacyAssignmentLabel();
+                return legacy ? [legacy] : [];
+            }
             return rows.map(row => {
                 const name = relationName(row.instruments) || 'Όργανο';
                 if (row.part_position) return `${name} ${row.part_position}`;
@@ -906,6 +924,14 @@
                     (m.concert_set || '').toLowerCase().includes(q)
                 );
             }
+            displayed.sort((a, b) => {
+                const title = (a.piece_title || '').localeCompare(b.piece_title || '', 'el', { sensitivity: 'base' });
+                if (title !== 0) return title;
+                const composer = (a.composer || '').localeCompare(b.composer || '', 'el', { sensitivity: 'base' });
+                if (composer !== 0) return composer;
+                // Later: secondary key should be full-score instrument order from the complete list.
+                return musicPartLabel(a).localeCompare(musicPartLabel(b), 'el', { sensitivity: 'base' });
+            });
             return { displayed, allSets, partNames, poolCount: pool.length };
         }
 
@@ -948,9 +974,9 @@
             if (isAdminRole()) {
                 const { data: instruments } = await supabaseClient
                     .from('instruments')
-                    .select('id, name, max_regular_parts, sort_order')
+                    .select('id, name, max_regular_parts, sort_order, is_section, is_percussion')
                     .order('sort_order');
-                window.canonicalInstruments = instruments || [];
+                window.canonicalInstruments = (instruments || []).filter(ins => !ins.is_section);
                 html += `
                     <div class="mt-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
                         <h3 class="font-bold text-sm text-indigo-400 mb-3">Διαχειριστής: Προσθήκη Παρτιτούρας</h3>
