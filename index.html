@@ -503,7 +503,7 @@
             if (currentProfile?.id) {
                 const { data: assignments, error: assignmentError } = await supabaseClient
                     .from('user_instruments')
-                    .select('part_position, concert_set, instruments(name)')
+                    .select('instrument_id, part_position, concert_set, instruments(name)')
                     .eq('user_id', currentProfile.id);
                 currentProfile.assignments = assignmentError ? [] : (assignments || []);
             } else {
@@ -532,10 +532,31 @@
         }
 
         function musicPartLabel(item) {
-            return item?.musical_parts?.display_name
+            return item?.musical_parts?.instruments?.name
+                || item?.musical_parts?.display_name
                 || item?.instrument_part
                 || item?.concert_set
                 || 'Γενικό';
+        }
+
+        function musicianCanSeeMusicRow(item) {
+            if (isPrivilegedRole()) return true;
+            const assignedIds = (currentProfile?.assignments || [])
+                .map(row => String(row.instrument_id || ''))
+                .filter(Boolean);
+            const partInstrumentId = item?.musical_parts?.instrument_id;
+            if (partInstrumentId && assignedIds.includes(String(partInstrumentId))) return true;
+            const assignedNames = (currentProfile?.assignments || [])
+                .map(row => row.instruments?.name)
+                .filter(Boolean);
+            const partName = item?.musical_parts?.instruments?.name;
+            if (partName && assignedNames.includes(partName)) return true;
+            const legacy = (item?.instrument_part || '').trim();
+            if (legacy && assignedNames.includes(legacy)) return true;
+            if (assignedNames.includes('Percussion (all)') && ['Κρουστά', 'Percussion', 'Percussion (all)'].includes(legacy)) {
+                return true;
+            }
+            return false;
         }
 
         function assignmentLabels() {
@@ -826,7 +847,7 @@
 
             const { data: music, error } = await supabaseClient
                 .from('music_library')
-                .select('id, piece_title, composer, concert_set, instrument_part, pdf_link, musical_part_id, musical_parts(display_name, part_position, is_beginner, instruments(name))');
+                .select('id, piece_title, composer, concert_set, instrument_part, pdf_link, musical_part_id, musical_parts(display_name, part_position, is_beginner, instrument_id, instruments(name))');
 
             if (error) {
                 musicTabShellReady = false;
@@ -843,9 +864,12 @@
         }
 
         function filteredMusicRows() {
-            const allSets = [...new Set(musicLibraryCache.map(m => (m.concert_set || '').trim()).filter(Boolean))].sort();
-            const partNames = [...new Set(musicLibraryCache.map(m => musicPartLabel(m)).filter(Boolean))].sort();
-            let displayed = musicLibraryCache.slice();
+            const pool = isPrivilegedRole()
+                ? musicLibraryCache.slice()
+                : musicLibraryCache.filter(musicianCanSeeMusicRow);
+            const allSets = [...new Set(pool.map(m => (m.concert_set || '').trim()).filter(Boolean))].sort();
+            const partNames = [...new Set(pool.map(m => musicPartLabel(m)).filter(Boolean))].sort();
+            let displayed = pool.slice();
 
             if (isPrivilegedRole() && musicFilter.instrument && musicFilter.instrument !== 'all') {
                 displayed = displayed.filter(m => musicPartLabel(m) === musicFilter.instrument);
@@ -862,7 +886,7 @@
                     (m.concert_set || '').toLowerCase().includes(q)
                 );
             }
-            return { displayed, allSets, partNames };
+            return { displayed, allSets, partNames, poolCount: pool.length };
         }
 
         async function buildMusicTabShell(content, music) {
@@ -958,8 +982,8 @@
             const results = document.getElementById('music-results');
             const count = document.getElementById('music-count');
             if (!results) return;
-            const { displayed } = filteredMusicRows();
-            if (count) count.textContent = `${displayed.length} από ${musicLibraryCache.length} παρτιτούρες`;
+            const { displayed, poolCount } = filteredMusicRows();
+            if (count) count.textContent = `${displayed.length} από ${poolCount} παρτιτούρες`;
 
             if (!displayed.length) {
                 results.innerHTML = `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">${musicLibraryCache.length === 0 ? 'Δεν υπάρχουν διαθέσιμες παρτιτούρες ακόμα.' : 'Καμία παρτιτούρα δεν ταιριάζει με τα φίλτρα σας.'}</div>`;
@@ -1111,7 +1135,7 @@
                 if (existing) existing.remove();
                 const dialog = document.createElement('div');
                 dialog.id = 'annotation-exit-dialog';
-                dialog.className = 'fixed inset-0 z-[10000] bg-black/60 flex items-end sm:items-center justify-center p-4';
+                dialog.className = 'fixed inset-0 z-[10000] bg-black/60 flex items-center justify-center p-4';
                 dialog.innerHTML = `
                     <div class="bg-slate-800 border border-slate-600 rounded-2xl p-4 w-full max-w-sm">
                         <p class="text-sm text-slate-100 mb-4">Έχετε μη αποθηκευμένες σημειώσεις. Θέλετε να τις αποθηκεύσετε πριν κλείσετε την παρτιτούρα;</p>
@@ -1781,9 +1805,11 @@
         }
 
         // --- EVENTS TAB ---
-        async function renderEventsTab() {
+        async function renderEventsTab(options = {}) {
             const content = document.getElementById('content');
-            content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Πρόγραμμα</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
+            if (!options.quiet) {
+                content.innerHTML = `<h2 class="text-2xl font-bold mb-4">Πρόγραμμα</h2><p class="text-slate-400 text-sm">Φόρτωση προγράμματος...</p>`;
+            }
 
             const { data: events, error: eventError } = await supabaseClient.from('band_events').select('*').order('date', { ascending: true }).order('time', { ascending: true, nullsFirst: false }).order('id', { ascending: true });
             
@@ -1878,12 +1904,12 @@
                         </div>`;
                 }).join('');
 
-                if (!upcoming.length && !past.length) {
-                    html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν προγραμματισμένες εκδηλώσεις.</div>`;
+                if (past.length) {
+                    html += `<details class="mb-6 bg-slate-800/40 rounded-xl border border-slate-700"${options.pastOpen ? ' open' : ''}><summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-300">Προηγούμενες εκδηλώσεις (${past.length})</summary><div class="space-y-4 p-4 pt-0">${renderEventCards(past)}</div></details>`;
                 }
                 if (upcoming.length) html += `<div class="space-y-4">${renderEventCards(upcoming)}</div>`;
-                if (past.length) {
-                    html += `<details class="mt-6 bg-slate-800/40 rounded-xl border border-slate-700"><summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-300">Προηγούμενες εκδηλώσεις (${past.length})</summary><div class="space-y-4 p-4 pt-0">${renderEventCards(past)}</div></details>`;
+                if (!upcoming.length && !past.length) {
+                    html += `<div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center text-slate-400 text-sm">Δεν υπάρχουν προγραμματισμένες εκδηλώσεις.</div>`;
                 }
             }
 
@@ -2288,11 +2314,19 @@
             if (error) {
                 alert(`Σφάλμα αποθήκευσης παρουσίας:\n${error.message}\n\nΚωδικός: ${error.code || '—'}`);
             } else {
-                const scrollY = document.getElementById('content')?.scrollTop || window.scrollY;
-                await renderEventsTab();
-                const contentEl = document.getElementById('content');
-                if (contentEl) contentEl.scrollTop = scrollY;
-                else window.scrollTo(0, scrollY);
+                const scroller = document.scrollingElement || document.documentElement;
+                const scrollY = scroller.scrollTop || window.scrollY || 0;
+                const pastOpen = !!document.querySelector('#content details')?.open;
+                await renderEventsTab({ quiet: true, pastOpen });
+                const restore = () => {
+                    scroller.scrollTop = scrollY;
+                    window.scrollTo(0, scrollY);
+                };
+                requestAnimationFrame(() => {
+                    restore();
+                    requestAnimationFrame(restore);
+                });
+                setTimeout(restore, 50);
             }
         }
 
